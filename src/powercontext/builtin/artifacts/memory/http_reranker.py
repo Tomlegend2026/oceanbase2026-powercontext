@@ -1,22 +1,58 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ruff: noqa: TRY003
+
+"""HTTP cross-encoder Memory reranking over an already ranked candidate pool."""
+
+from __future__ import annotations
+
 import math
+from collections.abc import Sequence
+from typing import Any
+
 import httpx
-from typing import Sequence
 
-from powercontext.artifacts.memory import MemoryReranker, MemoryHit, MemoryRerankDecision
-from powercontext.artifacts.usage import InferenceUsage
+from powercontext.builtin.artifacts.memory.models import MemoryHit
+from powercontext.builtin.artifacts.memory.reranking import MemoryRerankDecision
+from powercontext.builtin.inference import InferenceUsage
 
-# 如果 MemoryMatchedBy 需要导入，加上这一句（如果报错找不到，说明不需要）
-# from powercontext.artifacts.memory import MemoryMatchedBy
+_DEFAULT_BATCH_SIZE = 32
+_DEFAULT_POLICY_ID = "http-cross-encoder-v1"
 
-class HTTPMemoryReranker(MemoryReranker):
+
+class HTTPMemoryReranker:
+    """Score one candidate pool through a caller-supplied HTTP service.
+
+    The service contract is deliberately small: one POST carries a query and a
+    batch of originally ranked candidates, and the response maps every rank in
+    that batch to one finite score. All batches contribute to one global
+    selection, so a later batch can outrank an earlier one.
+    """
+
+    policy_id: str = _DEFAULT_POLICY_ID
+
     def __init__(
         self,
         endpoint: str,
         *,
         client: httpx.AsyncClient,
-        batch_size: int = 32,
-        policy_id: str = "http-cross-encoder-v1"
-    ):
+        batch_size: int = _DEFAULT_BATCH_SIZE,
+        policy_id: str = _DEFAULT_POLICY_ID,
+    ) -> None:
+        if type(batch_size) is not int or batch_size < 1:
+            raise ValueError("batch_size must be a strictly positive integer")
         self.endpoint = endpoint
         self.client = client
         self.batch_size = batch_size
@@ -28,97 +64,100 @@ class HTTPMemoryReranker(MemoryReranker):
         candidates: Sequence[MemoryHit],
         limit: int,
     ) -> MemoryRerankDecision:
-        # 1. 参数边界校验
-        if not candidates or self.batch_size <= 0 or not (1 <= limit <= len(candidates)):
-            raise ValueError("Invalid parameters: candidates non-empty, batch_size > 0, 1 <= limit <= len(candidates)")
+        """Return the globally best ``limit`` original ranks from the pool."""
 
-        # 2. 组装完整候选池的 payload，记录原始一基 rank
-        all_candidates_payload = []
-        for idx, hit in enumerate(candidates):
-            global_rank = idx + 1
-            all_candidates_payload.append({
-                "rank": global_rank,
-                "text": hit.text
-            })
+        pool = self._candidate_pool(candidates)
+        if not pool:
+            raise ValueError("rerank requires at least one candidate")
+        if type(self.batch_size) is not int or self.batch_size < 1:
+            raise ValueError("batch_size must be a strictly positive integer")
+        if type(limit) is not int or limit < 1 or limit > len(pool):
+            raise ValueError("limit must be between one and the candidate count")
 
-        # 3. 分批发送请求
-        scores_map = {}
+        scores: dict[int, float] = {}
         request_count = 0
-
-        for i in range(0, len(all_candidates_payload), self.batch_size):
-            batch = all_candidates_payload[i : i + self.batch_size]
-            batch_ranks = {c["rank"] for c in batch}
-            
+        for start in range(0, len(pool), self.batch_size):
+            batch = pool[start : start + self.batch_size]
+            ranks = tuple(range(start + 1, start + 1 + len(batch)))
             payload = {
                 "query": query,
-                "candidates": batch
+                "candidates": [
+                    {"rank": rank, "text": candidate.text} for rank, candidate in zip(ranks, batch, strict=True)
+                ],
             }
+            response = await self.client.post(self.endpoint, json=payload)
+            self._require_success(response)
+            request_count += 1
+            scores.update(self._parse_scores(response, ranks))
 
-            # 网络请求与 HTTP 状态异常处理（保留 httpx 异常）
-            try:
-                response = await self.client.post(self.endpoint, json=payload)
-                response.raise_for_status()
-                request_count += 1
-            except httpx.HTTPError:
-                raise  # 直接抛出
-
-            # JSON 解析与 Schema 校验
-            try:
-                data = response.json()
-            except Exception as e:
-                raise ValueError("Invalid JSON response") from e
-
-            if not isinstance(data, dict) or "scores" not in data or not isinstance(data["scores"], list):
-                raise ValueError("Response must contain 'scores' list")
-
-            returned_ranks = set()
-            for item in data["scores"]:
-                if not isinstance(item, dict) or "rank" not in item or "score" not in item:
-                    raise ValueError("Each score must contain 'rank' and 'score'")
-                
-                # 检查是否包含额外字段
-                if set(item.keys()) != {"rank", "score"}:
-                    raise ValueError("Score object contains extra fields")
-
-                r = item["rank"]
-                s = item["score"]
-
-                # 检查跨批、缺失、重复
-                if r not in batch_ranks:
-                    raise ValueError(f"Invalid rank {r} for this batch")
-                if r in returned_ranks:
-                    raise ValueError(f"Duplicate rank {r}")
-                
-                # 检查分数是否为有限数值（拒绝 NaN 和 Infinity）
-                if not isinstance(s, (int, float)) or not math.isfinite(s):
-                    raise ValueError("Score must be a finite number")
-
-                returned_ranks.add(r)
-                scores_map[r] = s
-
-            # 确保本批次的 rank 恰好全覆盖
-            if returned_ranks != batch_ranks:
-                raise ValueError("Missing ranks in response")
-
-        # 4. 全局排序：按分数降序，分数相同按原始全局 rank 升序
-        sorted_ranks = sorted(
-            scores_map.keys(),
-            key=lambda r: (-scores_map[r], r)
-        )
-
-        # 5. 截取前 limit 个
-        selected_ranks = tuple(sorted_ranks[:limit])
-        
-        # 6. 计算丢弃的候选数量
-        discarded_count = len(candidates) - len(selected_ranks)
-        
-        # 7. 组装 usage 和 最终 Decision
-        usage = InferenceUsage(requests=request_count)
-
+        ordered_ranks = sorted(scores, key=lambda rank: (-scores[rank], rank))
+        selected_ranks = tuple(ordered_ranks[:limit])
         return MemoryRerankDecision(
             selected_ranks=selected_ranks,
-            usage=usage,
-            discarded_rank_count=discarded_count,
+            usage=InferenceUsage(requests=request_count),
+            discarded_rank_count=len(pool) - len(selected_ranks),
             used_fallback=False,
-            matched_by=tuple(),  # 若有报错，检查是否需要传入特定的枚举值，如 (MemoryMatchedBy.SCORE,)
         )
+
+    @staticmethod
+    def _candidate_pool(candidates: Sequence[MemoryHit]) -> tuple[MemoryHit, ...]:
+        try:
+            return tuple(candidates)
+        except TypeError as error:
+            raise ValueError("candidates must be a sequence") from error
+
+    @staticmethod
+    def _require_success(response: httpx.Response) -> None:
+        if 200 <= response.status_code < 300:
+            return
+        request = getattr(response, "request", None)
+        if not isinstance(request, httpx.Request):
+            request = httpx.Request("POST", "https://reranker.invalid")
+        raise httpx.HTTPStatusError(
+            f"Reranker returned HTTP {response.status_code}",
+            request=request,
+            response=response,
+        )
+
+    @staticmethod
+    def _parse_scores(response: httpx.Response, ranks: tuple[int, ...]) -> dict[int, float]:
+        try:
+            payload: Any = response.json()
+        except ValueError as error:
+            raise ValueError("Reranker response is not valid JSON") from error
+        if not isinstance(payload, dict) or set(payload) != {"scores"}:
+            raise ValueError("Reranker response must contain only 'scores'")
+        entries = payload["scores"]
+        if not isinstance(entries, list):
+            raise ValueError("Reranker response 'scores' must be an array")  # noqa: TRY004
+
+        expected = set(ranks)
+        observed: set[int] = set()
+        scores: dict[int, float] = {}
+        for entry in entries:
+            rank, score = HTTPMemoryReranker._parse_score(entry, expected, observed)
+            scores[rank] = score
+
+        if observed != expected:
+            raise ValueError("Scores must cover every rank in the current batch exactly once")
+        return scores
+
+    @staticmethod
+    def _parse_score(entry: Any, expected: set[int], observed: set[int]) -> tuple[int, float]:
+        if not isinstance(entry, dict) or set(entry) != {"rank", "score"}:
+            raise ValueError("Each score must contain exactly 'rank' and 'score'")
+        rank = entry["rank"]
+        score = entry["score"]
+        if type(rank) is not int or rank not in expected:
+            raise ValueError("Score rank must be an integer from the current batch")
+        if rank in observed:
+            raise ValueError("Score rank must not repeat inside a batch")
+        if isinstance(score, bool) or not isinstance(score, int | float):
+            raise ValueError("Score must be a finite number")  # noqa: TRY004
+        if isinstance(score, float) and not math.isfinite(score):
+            raise ValueError("Score must be a finite number")
+        observed.add(rank)
+        return rank, score
+
+
+__all__ = ["HTTPMemoryReranker"]
