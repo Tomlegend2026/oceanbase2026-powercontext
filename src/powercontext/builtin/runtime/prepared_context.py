@@ -282,25 +282,29 @@ class PreparedContextBuilder:
         """Select literal query-relevant spans from the Memory candidates."""
 
         candidates: list[tuple[MemoryEntryAddress, str]] = []
-        seen: set[tuple[str, str, str]] = set()
+        seen: set[tuple[str, str, int, str, str]] = set()
         for group in memory_candidates:
             if group.memory_ref is None:
                 continue
             for hit in group.hits:
-                identity = (group.scope_id, hit.entry_id, hit.entry_version_id)
+                identity = (
+                    group.scope_id,
+                    group.memory_ref.artifact_id,
+                    group.memory_ref.revision,
+                    hit.entry_id,
+                    hit.entry_version_id,
+                )
                 if identity in seen or not hit.text.strip():
                     continue
                 seen.add(identity)
-                candidates.append(
-                    (
-                        MemoryEntryAddress(
-                            memory=ArtifactAddress(scope_id=group.scope_id, artifact=group.memory_ref),
-                            entry_id=hit.entry_id,
-                            entry_version_id=hit.entry_version_id,
-                        ),
-                        hit.text,
-                    )
-                )
+                candidates.append((
+                    MemoryEntryAddress(
+                        memory=ArtifactAddress(scope_id=group.scope_id, artifact=group.memory_ref),
+                        entry_id=hit.entry_id,
+                        entry_version_id=hit.entry_version_id,
+                    ),
+                    hit.text,
+                ))
         spans = _rank_spans(candidates, request.query)
         if not spans:
             return PreparedContextBuild(context=self.empty(), origins=())
@@ -766,21 +770,95 @@ def _interleave_groups(groups: Sequence[Sequence[_Item]]) -> tuple[_Item, ...]:
     return tuple(ordered)
 
 
-_SELECTION_TERM = re.compile(r"[a-z0-9]+")
-_SELECTION_STOPWORDS = frozenset(
-    (
-        "a an the of and or in on for to is are was were be been being what which who whom how why when where "
-        "does do did has have had it its this that these those as at by from with about into than then so if not "
-        "no we our you your they their there here can could should would may might must will shall per each also "
-        "any all such other more most less least"
-    ).split()
-)
+_SELECTION_TERM = re.compile(r"[^\W_]+", re.UNICODE)
+_SELECTION_STOPWORDS = frozenset([
+    "a",
+    "an",
+    "the",
+    "of",
+    "and",
+    "or",
+    "in",
+    "on",
+    "for",
+    "to",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "what",
+    "which",
+    "who",
+    "whom",
+    "how",
+    "why",
+    "when",
+    "where",
+    "does",
+    "do",
+    "did",
+    "has",
+    "have",
+    "had",
+    "it",
+    "its",
+    "this",
+    "that",
+    "these",
+    "those",
+    "as",
+    "at",
+    "by",
+    "from",
+    "with",
+    "about",
+    "into",
+    "than",
+    "then",
+    "so",
+    "if",
+    "not",
+    "no",
+    "we",
+    "our",
+    "you",
+    "your",
+    "they",
+    "their",
+    "there",
+    "here",
+    "can",
+    "could",
+    "should",
+    "would",
+    "may",
+    "might",
+    "must",
+    "will",
+    "shall",
+    "per",
+    "each",
+    "also",
+    "any",
+    "all",
+    "such",
+    "other",
+    "more",
+    "most",
+    "less",
+    "least",
+])
 _SPAN_PATTERN = re.compile(r"[^.!?\n]+[.!?]*")
 _MIN_FRAGMENT_CHARS = 40
 
 
 def _selection_terms(text: str) -> list[str]:
-    return [term for term in _SELECTION_TERM.findall(text.lower()) if term not in _SELECTION_STOPWORDS and len(term) > 1]
+    return [
+        term for term in _SELECTION_TERM.findall(text.lower()) if term not in _SELECTION_STOPWORDS and len(term) > 1
+    ]
 
 
 def _candidate_spans(text: str) -> list[tuple[int, int, str]]:
@@ -796,46 +874,102 @@ def _candidate_spans(text: str) -> list[tuple[int, int, str]]:
     return spans
 
 
-def _rank_spans(candidates: Sequence[tuple[MemoryEntryAddress, str]], query: str) -> list[tuple[MemoryEntryAddress, int, int, str]]:
-    """Rank literal spans by how much of the query each one carries."""
+def _rank_spans(  # noqa: C901 - one deterministic window ranking pass
+    candidates: Sequence[tuple[MemoryEntryAddress, str]], query: str
+) -> list[tuple[MemoryEntryAddress, int, int, str]]:
+    """Rank consecutive sentence windows, preferring the strongest document.
 
-    terms = _selection_terms(query)
-    if not terms:
+    A single sentence is often too narrow for a claim whose evidence spans two
+    adjacent sentences, while isolated sentence ranking can spend the budget on
+    distractors. Windows keep the original character intervals and let the
+    highest-scoring document contribute its best contiguous evidence first.
+    """
+
+    wanted = set(_selection_terms(query))
+    if not wanted:
         return []
-    rows: list[tuple[MemoryEntryAddress, int, int, str, set[str]]] = []
+
+    documents: list[tuple[MemoryEntryAddress, str, list[tuple[int, int, str, set[str]]]]] = []
+    rows: list[tuple[int, int, str, set[str]]] = []
     for address, text in candidates:
+        document_rows: list[tuple[int, int, str, set[str]]] = []
         for start, end, chunk in _candidate_spans(text):
-            rows.append((address, start, end, chunk, set(_selection_terms(chunk))))
-    if not rows:
+            tokens = set(_selection_terms(chunk))
+            document_rows.append((start, end, chunk, tokens))
+            rows.append((start, end, chunk, tokens))
+        if document_rows:
+            documents.append((address, text, document_rows))
+    if not documents:
         return []
 
     frequency: dict[str, int] = {}
-    for _, _, _, _, tokens in rows:
-        for term in set(terms) & tokens:
+    for _, _, _, tokens in rows:
+        for term in wanted & tokens:
             frequency[term] = frequency.get(term, 0) + 1
     total = len(rows)
     weights = {term: math.log(1.0 + total / count) for term, count in frequency.items()}
-    wanted = set(terms)
 
-    ranked: list[tuple[float, int, MemoryEntryAddress, int, int, str]] = []
-    for address, start, end, chunk, tokens in rows:
-        matched = [term for term in wanted if term in tokens]
-        if not matched:
-            continue
-        score = sum(weights[term] for term in matched) + 0.25 * len(matched)
-        if len(matched) == len(wanted):
-            score += 0.5
-        ranked.append((score, -start, address, start, end, chunk))
-    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    ranked_documents: list[
+        tuple[float, int, MemoryEntryAddress, tuple[tuple[float, int, int, int, str, bool], ...]]
+    ] = []
+    for document_index, (address, text, document_rows) in enumerate(documents):
+        scored: list[tuple[int, int, str, float, bool]] = []
+        for start, end, chunk, tokens in document_rows:
+            matched = wanted & tokens
+            score = sum(weights.get(term, 0.0) for term in matched) + 0.25 * len(matched)
+            if matched and matched == wanted:
+                score += 0.5
+            scored.append((start, end, chunk, score, bool(matched)))
+
+        windows: list[tuple[float, int, int, int, str, bool]] = []
+        count = len(scored)
+        for first in range(count):
+            for last in range(first, min(count, first + 3)):
+                start = scored[first][0]
+                end = scored[last][1]
+                window_text = text[start:end]
+                if not window_text:
+                    continue
+                score = sum(item[3] for item in scored[first : last + 1]) + 0.15 * (last - first + 1)
+                matched = any(item[4] for item in scored[first : last + 1])
+                windows.append((score, -start, start, end, window_text, matched))
+        windows.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        ranked_documents.append((
+            sum(item[3] for item in scored),
+            -document_index,
+            address,
+            tuple(windows),
+        ))
+
+    if not any(document[0] > 0 for document in ranked_documents):
+        return []
+    ranked_documents.sort(key=lambda item: (item[0], item[1]), reverse=True)
 
     ordered: list[tuple[MemoryEntryAddress, int, int, str]] = []
-    seen: set[tuple[str, str, int, int]] = set()
-    for _, _, address, start, end, chunk in ranked:
-        identity = (address.entry_id, address.entry_version_id, start, end)
-        if identity in seen:
-            continue
-        seen.add(identity)
-        ordered.append((address, start, end, chunk))
+    seen: set[tuple[str, str, int, str, str, int, int]] = set()
+    used_by_document: dict[int, list[tuple[int, int]]] = {}
+    for match_required in (True, False):
+        for _, _, address, windows in ranked_documents:
+            used = used_by_document.setdefault(id(address), [])
+            for _, _, start, end, chunk, matched in windows:
+                if matched != match_required:
+                    continue
+                if any(not (end <= used_start or start >= used_end) for used_start, used_end in used):
+                    continue
+                identity = (
+                    address.memory.scope_id,
+                    address.memory.artifact.artifact_id,
+                    address.memory.artifact.revision,
+                    address.entry_id,
+                    address.entry_version_id,
+                    start,
+                    end,
+                )
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                used.append((start, end))
+                ordered.append((address, start, end, chunk))
     return ordered
 
 
@@ -857,7 +991,9 @@ def _fragment_entry(address: MemoryEntryAddress, start: int, end: int, text: str
     )
 
 
-def _fit_fragment(selected: Sequence[_PreparedContextEntry], entry: _PreparedContextEntry, max_bytes: int) -> _PreparedContextEntry | None:
+def _fit_fragment(
+    selected: Sequence[_PreparedContextEntry], entry: _PreparedContextEntry, max_bytes: int
+) -> _PreparedContextEntry | None:
     """Shorten one fragment until the whole envelope fits the byte budget."""
 
     start = entry.start or 0
@@ -907,8 +1043,9 @@ def _render_entry(entry: _PreparedContextEntry) -> dict[str, object]:
     rendered: dict[str, object] = {
         "citation": entry.citation,
         "content": entry.content,
-        "truncated": entry.truncated,
     }
+    if entry.start is None or entry.end is None:
+        rendered["truncated"] = entry.truncated
     if entry.kind != "memory":
         rendered["kind"] = entry.kind
     if entry.start is not None and entry.end is not None:
