@@ -14,7 +14,6 @@
 
 """Business-specific Runtime operations over composed built-in contexts."""
 
-
 from __future__ import annotations
 
 import asyncio
@@ -26,8 +25,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Protocol
-
-from powercontext.builtin.runtime.context_pack import ContextPack, ContextPackDelta
 
 from pydantic import BaseModel, JsonValue, ValidationError
 
@@ -169,6 +166,7 @@ from powercontext.builtin.runtime._scope_cache import (
     ScopeCacheObserver,
     ScopeEvictor,
 )
+from powercontext.builtin.runtime.context_pack import ContextPack, ContextPackDelta
 from powercontext.builtin.runtime.decision_model import DecisionModel
 from powercontext.builtin.runtime.errors import InvalidRuntimeRequestError, TopicMemoryProcessingUnavailableError
 from powercontext.builtin.runtime.models import (
@@ -838,6 +836,15 @@ class ScopedContextApplication:
         *,
         authorize_scopes: Callable[[tuple[str, ...]], Awaitable[None]] | None = None,
     ) -> PreparedContext:
+        return await self._prepare_request(request, authorize_scopes=authorize_scopes)
+
+    async def _prepare_request(
+        self,
+        request: PrepareContextRequest,
+        /,
+        *,
+        authorize_scopes: Callable[[tuple[str, ...]], Awaitable[None]] | None = None,
+    ) -> PreparedContext:
         if (
             request.assembly is not None
             and sum(section.limit for section in request.assembly.sections) > self._runtime.context_assembly_max_entries
@@ -854,40 +861,22 @@ class ScopedContextApplication:
         self,
         request: PrepareContextRequest,
         base_pack: ContextPack | None = None,
-        /,
         *,
         authorize_scopes: Callable[[tuple[str, ...]], Awaitable[None]] | None = None,
-        atomic_context: ArtifactSearchExecutionContext | None = None,
     ) -> ContextPack | ContextPackDelta:
-        from dataclasses import replace
-        from powercontext.builtin.runtime.context_pack import ContextPack, ContextPackDelta
+        """Prepare one context as a full pack or as a delta against ``base_pack``.
 
-        async with self._runtime._scope_operation(self.scope_id) as scope:
-            # 处理空请求直接返回空包装的逻辑
-            if request.assembly is not None and not request.assembly.sections and not request.include_code:
-                target_pack = ContextPack.from_content(None)
-                if base_pack is None:
-                    return target_pack
-                return ContextPackDelta.between(base_pack, target_pack)
+        The target bytes always come from the ordinary prepare path. A provided
+        base is only the receiver's previous pack; no process-local cache or
+        sender-side object is consulted to rebuild the target.
+        """
 
-            if authorize_scopes is not None:
-                await authorize_scopes((self.scope_id, *scope.context_references))
-            
-            # 精准提取底层 Build，拿到确切的 content 字段
-            build, _ = await self._prepare_build(request, scope)
-            prepared_context = build.context
-            content_str = prepared_context.content
-            
-            if prepared_context.status == "empty" or content_str is None:
-                content_str = ""
+        prepared = await self._prepare_request(request, authorize_scopes=authorize_scopes)
+        target_pack = ContextPack.from_content(prepared.content)
+        if base_pack is None:
+            return target_pack
+        return ContextPackDelta.between(base_pack, target_pack)
 
-            target_pack = ContextPack.from_content(content_str)
-            
-            if base_pack is None:
-                return target_pack
-                
-            return ContextPackDelta.between(base_pack, target_pack)
-    
     async def _prepare(self, request: PrepareContextRequest, scope: ScopeDescriptor, /) -> PreparedContext:
         build, effort = await self._prepare_build(request, scope)
         if effort is not None and self._runtime._recall_effort_sink is not None:
