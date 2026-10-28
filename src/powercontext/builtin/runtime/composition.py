@@ -585,6 +585,7 @@ async def open_builtin_runtime(
             BuiltinRuntime(
                 code_service=await resources.enter_async_context(open_code_service(config.code, config.database)),
                 provider=contexts,
+                database=contexts.database,
                 capabilities=RuntimeCapabilities(
                     memory_extraction=contexts.memory_extraction,
                     experience_generation=contexts.experience_generation,
@@ -784,8 +785,10 @@ def _artifact_processing_bindings(  # noqa: C901 - validate and assemble one reg
                 else None,
                 timezone=config.runtime.profile_timezone if family == "profile" else "Asia/Shanghai",
                 source_count_threshold=(
-                    config.runtime.memory_source_count_threshold if family == "memory" 
-                    else config.runtime.topic_memory_source_count_threshold if family == "topic-memory" 
+                    config.runtime.memory_source_count_threshold
+                    if family == "memory"
+                    else config.runtime.topic_memory_source_count_threshold
+                    if family == "topic-memory"
                     else None
                 ),
                 pending_provider=None
