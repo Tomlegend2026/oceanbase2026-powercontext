@@ -924,13 +924,16 @@ def _rank_spans(  # noqa: C901 - one deterministic window ranking pass
         windows: list[tuple[float, int, int, int, str, bool]] = []
         count = len(scored)
         for first in range(count):
-            for last in range(first, min(count, first + 3)):
+            for last in range(first, count):
                 start = scored[first][0]
                 end = scored[last][1]
                 window_text = text[start:end]
                 if not window_text:
                     continue
                 score = sum(item[3] for item in scored[first : last + 1]) + 0.15 * (last - first + 1)
+                # Prefer windows that carry query evidence without paying for a long
+                # irrelevant prefix; the absolute sum alone rewards early bulk text.
+                score /= 1.0 + (end - start) / 200.0
                 matched = any(item[4] for item in scored[first : last + 1])
                 windows.append((score, -start, start, end, window_text, matched))
         windows.sort(key=lambda item: (item[0], item[1]), reverse=True)
