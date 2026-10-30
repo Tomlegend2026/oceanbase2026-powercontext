@@ -10,6 +10,19 @@ python -m http.server 8090
 # 打开 http://127.0.0.1:8090
 ```
 
+## 截图（一条命令）
+
+应用跑起来后：
+
+```powershell
+cd qoder
+.\scripts\screenshots.ps1        # 用本机 Edge/Chrome 无头模式截四个页签
+```
+
+产物写到 `site/assets/{today,replay,compare,evidence}.png`。无头模式被安全软件拦下时，脚本会提示失败，用 `Win+Shift+S` 手工截同样四个页签、存成同名文件即可。
+
+四个页签都支持 URL hash 直达：`#today`、`#replay`、`#compare`、`#evidence`。
+
 ## 发布前必须做的三件事
 
 1. **换截图**：把 `index.html` 里 `#gallery` 的三个 `.shot-placeholder` 换成真实图片：

@@ -388,4 +388,11 @@ function wire() {
 
 wire();
 loadHealth();
-loadToday();
+
+// 支持 #today / #replay / #compare / #evidence 直接打开某个页签（截图与分享都用得上）
+const initialTab = (window.location.hash || "").replace("#", "");
+if (["today", "replay", "compare", "evidence"].includes(initialTab)) {
+  switchTab(initialTab);
+} else {
+  loadToday();
+}
