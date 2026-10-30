@@ -22,3 +22,4 @@ __pycache__/
 .uv/
 .pytest_cache/
 .ruff_cache/
+pytest-cache-files-*/
