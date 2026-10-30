@@ -82,8 +82,8 @@ qoder/
 
 ### 已验证 / 未验证
 
-- **已验证**：种子文件可解析（28 卡、7 章、id 与 kp_id 唯一、章节引用有效）；四个 PowerShell 脚本零解析错误；提交基线为 `2026-competition-ecosystem` 的 `d647275c`。
-- **未验证**：真实 PowerContext 实例上的调用（本机未安装 uv 与 PowerContext，且当前环境禁止联网安装）。首次运行 `.\scripts\verify-powercontext.ps1` 即可确认；该脚本对响应字段做了防御式解析，不匹配时保留原始 JSON 供核对。
+- **已验证**：种子文件可解析（28 卡、7 章、id 与 kp_id 唯一、章节引用有效）；四个 PowerShell 脚本零解析错误；提交基线为 `2026-competition-ecosystem` 的 `d647275c`；中文记忆可被检索（用仓库自身的 `analyze_text` + SQLite FTS5 复现，见 [memory-design.md](docs/memory-design.md) 第 6 节）。
+- **未验证**：真实 PowerContext Server 上的调用（本机未安装 uv / PowerContext，当前环境禁止联网安装；用源码直接拉起时缺 `casbin` 等可选依赖）。首次运行 `.\scripts\verify-powercontext.ps1` 即可确认；该脚本对响应字段做了防御式解析，不匹配时保留原始 JSON 供核对。
 
 ## 验证
 

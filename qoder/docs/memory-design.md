@@ -95,6 +95,13 @@ mode  = "auto"
 
 **降级**：`search` 返回空 `hits` 时，队列照常出（只按到期分），讲解区显示"暂无历史，按默认讲法"；`prepare` 返回 `status:"empty"` 时同样处理。**不要**伪造记忆或补一段通用建议。
 
+**本机复核结论**（用仓库自身的 `analyze_text` 与 SQLite FTS5 复现）：
+
+- 中文记忆文本入库后形如 `kp db ch6 mvcc readview mvcc u_7684 read view ...`，`隔离级别`、`read view 快照` 都能召回该条。
+- 纯 FTS 会偏宽：`BCNF 超键` 对另一条偏好条目也产生了候选，但服务端的覆盖率准入（`admits_fts_text`，`BCNF 超键` 要求命中 2 个 token）把它挡掉了。
+- 长 query 代价：`事务 并发 隔离级别 read view 快照` 生成 18 个 token、要求至少命中 5 个。**所以 query 必须把课程、章节、知识点一起写**，只写一个词会召回不稳。
+- 结论：`hits` 只作为 0/1 信号参与打分，不做精细排序；这也是打分公式里 `hit()` 取 0/1 的原因。
+
 ## 7. 审计格式
 
 `memory_audit.jsonl`，一行一次调用：
