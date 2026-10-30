@@ -23,22 +23,22 @@ cd qoder
 
 四个页签都支持 URL hash 直达：`#today`、`#replay`、`#compare`、`#evidence`。
 
-## 发布前必须做的三件事
+## 现状
 
-1. **换截图**：把 `index.html` 里 `#gallery` 的三个 `.shot-placeholder` 换成真实图片：
+四张截图已经用真实运行截好（`assets/today.png`、`replay.png`、`compare.png`、`evidence.png`），页面里的数字来自真实 Server 上的运行结果。
 
-   ```html
-   <figure class="shot">
-     <img src="assets/today.png" alt="今日队列，卡片上显示分数拆解与命中的 entry_id">
-     <figcaption>今日队列：分数拆解与记忆命中</figcaption>
-   </figure>
-   ```
+## 发布前还要做的两件事
 
-   建议图片宽度 1200px 左右、体积 < 300KB，放在 `site/assets/`。
+1. **补仓库链接**：页脚可加一行指向代码仓库与 RUNBOOK（当前刻意留空，避免链接指向错误地址）。
+2. **核对数字**：改过代码就重跑 `.\scripts\verify.ps1`，再更新页面里的 PASS 数与截图。
 
-2. **补仓库链接**：页脚可加一行指向代码仓库与 RUNBOOK（当前刻意留空，避免链接指向错误地址）。
+## 需要重截时
 
-3. **核对数字**：页面里的 34 个单测、8 项验证来自一次真实运行；如果你改过代码，重新跑一遍再更新。
+```powershell
+cd qoder
+.\scripts\start.ps1
+.\scripts\screenshots.ps1
+```
 
 ## 发布（Qoder Sites）
 
