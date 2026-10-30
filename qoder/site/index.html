@@ -101,8 +101,8 @@
         <article class="panel">
           <h3>写入序列：跳过 → 写入 → 修订</h3>
           <pre><code>第 1 次答错  skip/lapses&lt;2      未写入
-第 2 次答错  write/threshold-met e0002 v1
-第 3 次答错  revise/dedupe       e0002 v2</code></pre>
+第 2 次答错  write/threshold-met mem_ent_… v1
+第 3 次答错  revise/dedupe       mem_ent_… v2</code></pre>
           <p class="caption">同一知识点只留一条有效条目；第三次是修订，不会堆成三条。</p>
         </article>
         <article class="panel">
@@ -111,13 +111,13 @@
             <thead><tr><th>卡片</th><th>读记忆</th><th>不读记忆</th></tr></thead>
             <tbody>
               <tr><td>db-022 MVCC read view</td><td class="win">#1</td><td>未进前五</td></tr>
-              <tr><td>db-001 外键与参照完整性</td><td>#2</td><td>#1</td></tr>
-              <tr><td>db-002 投影与去重</td><td>#3</td><td>#2</td></tr>
-              <tr><td>db-003 自然连接</td><td>#4</td><td>#3</td></tr>
-              <tr><td>db-004 三值逻辑</td><td>#5</td><td>#4</td></tr>
+              <tr><td>db-021 隔离级别与异常现象</td><td>#2</td><td>未进前五</td></tr>
+              <tr><td>db-023 两阶段锁与死锁</td><td>#3</td><td>未进前五</td></tr>
+              <tr><td>db-024 防止丢失更新</td><td>#4</td><td>未进前五</td></tr>
+              <tr><td>db-002 投影与去重</td><td>#5</td><td>#1</td></tr>
             </tbody>
           </table>
-          <p class="caption">db-022 的分数从 0.1 变成 1.3，来源是一条真实写入的薄弱点记忆。</p>
+          <p class="caption">db-022 的分数从 0.1 变成 1.0（当天已练过，含疲劳扣分），来源是一条真实写入的混淆记忆。</p>
         </article>
       </div>
     </section>
