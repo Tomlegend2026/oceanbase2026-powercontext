@@ -1,6 +1,8 @@
 # 运行说明（RUNBOOK）
 
-从零到可以复习的完整步骤。主路径在 **Windows 11 + PowerShell 7** 上验证；macOS / Linux 的差异见第 8 节。
+从零到可以复习的完整步骤。主路径面向 Windows 10/11，PowerShell 5.1 与 7 均可运行（脚本以 UTF-8 BOM 保存，5.1 不会乱码）；macOS / Linux 的差异见第 8 节。
+
+> 脚本已通过 PowerShell 解析校验，但**尚未在本机对真实 Server 跑过一次**（本机未安装 uv/PowerContext）。首次执行若遇字段差异，`verify-powercontext.ps1` 会把原始请求与响应留在 `evidence/verify/<时间戳>/`，按第 9 节排查即可。
 
 > 文档中的示例以 PowerShell 为准。PowerContext 官方文档里带 `export`/`unset` 的 Bash 示例不要直接粘进 PowerShell。
 

@@ -110,6 +110,18 @@ CREATE TABLE memory_refs (
 
 迁移：`PRAGMA user_version` + `store/schema.sql`。
 
+### 种子文件契约
+
+`seed/db-systems.cards.json`：
+
+```json
+{ "course": {"id","title"},
+  "chapters": [{"id","title"}],
+  "cards": [{"id","kp_id","kp_name","chapter","front","back","explanation","cause_options":[...]}] }
+```
+
+导入规则：`course`/`chapters` 用 `INSERT ... ON CONFLICT DO NOTHING`；`kp` 由 `(kp_id, kp_name, chapter)` upsert；`cards` 按 `id` upsert；`schedule` 仅在首次插入时创建（`due_at = 今天`，`ease = 2.5`，`interval_days = 1`）。重复执行 `init-db` 不得产生重复行，也不得重置已有进度。
+
 ## 6. 内部 REST 契约
 
 | 方法 | 路径 | 请求 | 响应要点 |
