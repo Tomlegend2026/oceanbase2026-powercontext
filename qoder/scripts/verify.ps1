@@ -45,7 +45,6 @@ function Add-Result {
 function Check {
     param([string]$Step, [bool]$Condition, [string]$Expected, [string]$Actual)
     Add-Result -Step $Step -Verdict $(if ($Condition) { "PASS" } else { "FAIL" }) -Expected $Expected -Actual $Actual
-    return $Condition
 }
 
 function Read-EnvFile {
@@ -135,7 +134,19 @@ $env:PYTHONPATH = Join-Path $appDir "src"
 
 $stdout = Join-Path $outDir "app.stdout.log"
 $stderr = Join-Path $outDir "app.stderr.log"
-if (Get-Command uv -ErrorAction SilentlyContinue) {
+$base = "http://127.0.0.1:$AppPort"
+
+# 端口必须干净：否则可能连到上一次没退干净的实例，读的是旧数据库，断言会莫名其妙地错位。
+if (Test-HttpOk "$base/api/health") {
+    throw "端口 $AppPort 已被占用（可能是上次验证残留）。先 .\scripts\stop.ps1 -All，或换 -AppPort 8083。"
+}
+
+# 优先进 venv 里的 python：单个进程，停止时不会留下 uvicorn 子进程。
+$venvPython = Join-Path $appDir ".venv\Scripts\python.exe"
+if (Test-Path $venvPython) {
+    $file = $venvPython
+    $arguments = @("-m", "uvicorn", "recallcoach.main:app", "--port", "$AppPort")
+} elseif (Get-Command uv -ErrorAction SilentlyContinue) {
     $file = (Get-Command uv).Source
     $arguments = @("run", "uvicorn", "recallcoach.main:app", "--port", "$AppPort")
 } else {
@@ -145,7 +156,6 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
 $script:appProc = Start-Process -FilePath $file -ArgumentList $arguments -WorkingDirectory $appDir `
     -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 
-$base = "http://127.0.0.1:$AppPort"
 $ready = $false
 for ($i = 0; $i -lt 40; $i++) {
     if (Test-HttpOk "$base/api/health") { $ready = $true; break }
@@ -155,7 +165,13 @@ if (-not $ready) {
     if (Test-Path $stderr) { Get-Content $stderr -Tail 20 | Write-Host }
     throw "应用 40 秒内未就绪，日志：$stderr"
 }
-Add-Result "02 app" "PASS" "隔离实例可访问" "$base（db=$runDb）"
+
+# 确认回话的是本次启动的实例，而不是别的进程。
+$identity = Invoke-Json -Method GET -Url "$base/api/health"
+if ([System.IO.Path]::GetFullPath([string]$identity.db_path) -ne [System.IO.Path]::GetFullPath($runDb)) {
+    throw "端口 $AppPort 上运行的实例用的不是本次数据库（$($identity.db_path)）。先 .\scripts\stop.ps1 -All 再重试。"
+}
+Add-Result "02 app" "PASS" "隔离实例可访问且数据库匹配" "$base（db=$runDb）"
 
 try {
     # ---------------- V1 冷启动 ----------------
@@ -218,8 +234,11 @@ try {
 
     # ---------------- V6 重启后仍在 ----------------
     $before = (Invoke-Json -Method GET -Url "$base/api/replay").entries.Count
-    Stop-Process -Id $script:appProc.Id -Force
-    Start-Sleep -Seconds 1
+    Stop-Process -Id $script:appProc.Id -Force -ErrorAction SilentlyContinue
+    for ($i = 0; $i -lt 20; $i++) {
+        if (-not (Test-HttpOk "$base/api/health")) { break }
+        Start-Sleep -Milliseconds 400
+    }
     $script:appProc = Start-Process -FilePath $file -ArgumentList $arguments -WorkingDirectory $appDir `
         -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     $ready = $false

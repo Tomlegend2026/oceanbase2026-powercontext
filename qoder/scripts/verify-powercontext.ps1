@@ -251,13 +251,12 @@ if ($prep.Ok -and $prepStatus -eq "ready" -and $prepContent) {
 }
 
 # 7. 盘点
-$listPath = "/v1/memory/entries/list?scope_id=" + [uri]::EscapeDataString($scopeId)
-$list = Invoke-Pc -Method GET -Path $listPath
+$list = Invoke-Pc -Method POST -Path "/v1/memory/entries/list" -Body @{ scope_id = $scopeId }
 Save-Raw "08-entries-list.json" $list
 $listCount = 0
 if ($list.Json) {
-    if ($list.Json.items) { $listCount = @($list.Json.items).Count }
-    elseif ($list.Json.entries) { $listCount = @($list.Json.entries).Count }
+    if ($list.Json.entries) { $listCount = @($list.Json.entries).Count }
+    elseif ($list.Json.items) { $listCount = @($list.Json.items).Count }
 }
 if ($list.Ok) {
     Add-Result "entries:list" "PASS" "HTTP 200；条目数 $listCount（原始响应见 08-entries-list.json）"

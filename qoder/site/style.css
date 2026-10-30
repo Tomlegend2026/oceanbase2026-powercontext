@@ -216,6 +216,15 @@ td.win {
 
 .shot { margin: 0; }
 
+.shot img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #0f1115;
+}
+
 .shot-placeholder {
   display: flex;
   align-items: center;

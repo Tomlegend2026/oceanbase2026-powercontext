@@ -81,19 +81,23 @@ def test_prepare_falls_back_without_assembly_on_422(workdir):
     assert "assembly" not in bodies[1]
 
 
-def test_entries_normalizes_shapes(workdir):
+def test_entries_uses_post_and_normalizes_shapes(workdir):
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/memory/entries/list"
+        assert request.method == "POST"
+        body = json.loads(request.content)
+        assert body["scope_id"] == "scope-1"
+        assert body["include_inactive"] is True
         return httpx.Response(
             200,
             json={
-                "items": [
+                "entries": [
                     {"citation": {"entry_id": "e3"}, "kind": "weakness", "text": "x", "version": 2, "state": "active"}
                 ]
             },
         )
 
     gateway = make_gateway(workdir, handler)
-    entries = gateway.entries("scope-1")
+    entries = gateway.entries("scope-1", include_inactive=True)
     assert entries[0]["entry_id"] == "e3"
     assert entries[0]["version"] == 2

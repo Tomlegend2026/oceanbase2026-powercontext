@@ -5,7 +5,7 @@
 ## 当前状态（截至 M0）
 
 - 方案、规格、28 张种子卡、脚本与环境模板：已完成（提交 `961ffd63`、`6813cf97`、`785e12a3`）。
-- 应用初版：AI 助手先行实现，34 个单测通过，用假 PowerContext 端到端跑通（skip → write → revise、A/B 重排、审计日志）。
+- 应用初版：AI 助手先行实现，34 个单测通过。\n- 已接真实 PowerContext 1.2.0：技术层 9/9；端到端 V1–V7 为 PASS 8 / WARN 1 / FAIL 0（V7 待人工登录 Dashboard）；四张界面截图已进站点。
 - 第二轮由 Qoder 接手：接真实 Server 修兼容、补 E2E、做站点（见 [qoder-prompts.md](qoder-prompts.md) 第二轮任务书）。
 - **记录原则**：如实标注"初版来源 + Qoder 在哪些环节继续开发"，不写"从零生成"。
 

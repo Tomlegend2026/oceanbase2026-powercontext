@@ -91,7 +91,7 @@ main { padding: 18px 28px 80px; }
   margin-bottom: 16px;
   white-space: pre-wrap;
 }
-.note.hidden, .hidden { display: none; }
+.note.hidden, .hidden { display: none !important; }
 
 .queue { display: grid; gap: 12px; }
 
@@ -215,4 +215,18 @@ main { padding: 18px 28px 80px; }
   padding: 10px 16px;
   max-width: 80vw;
   font-size: 13px;
+}
+
+/* 教练备忘：默认只显示可读的记忆条目，原始上下文折叠起来备查 */
+.coach-head { font-weight: 600; margin-bottom: 6px; }
+.coach-list { margin: 0; padding-left: 20px; }
+.coach-list li { margin-bottom: 6px; }
+.note details { margin-top: 10px; }
+.note summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.coach-raw {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  background: #0f1115;
 }

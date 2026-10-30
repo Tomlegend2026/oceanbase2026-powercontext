@@ -40,7 +40,7 @@ app.db                PowerContext Server (127.0.0.1:8000)
 
 1. `GET /api/today?personalization=on`
    - `store` 读取全部到期卡片；
-   - `memory/entries/list` 取全量记忆 → 按 `kp_id` 对齐命中；`memory/search`（query 由前 3 张卡的章节 + 知识点拼装）补充语义召回，两者按 `entry_id` 合并；
+   - `memory/entries/list` 取全量记忆 → 按 `kp_id` 对齐命中；`memory/search`（query 聚焦队列首位的章节 + 知识点）补充语义召回，两者按 `entry_id` 合并；
    - `context/prepare`（`assembly.sections=[{family:memory, limit:4}]`，`max_bytes=2000`）→ 教练备忘；
    - `scoring` 对全部到期卡打分，取前 10 返回。
 2. `POST /api/answer` → 写 `answers`、更新 `schedule` → `memory_policy` 判定是否写入 → 返回决策与 `entry_id`。

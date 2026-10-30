@@ -88,7 +88,7 @@ MAX_TEXT_CHARS = 300        # 远低于 API 的 8192 字节上限
 **query 构造**（决定语义召回质量，别把整段题面丢进去）：
 
 ```
-query = 前 3 张到期卡的 chapter_title + kp_name（去重拼接，截断 180 字符）
+query = 队列首位那张卡的 chapter_title + kp_name（截断 120 字符）
 limit = 20
 mode  = "auto"
 ```
@@ -97,7 +97,7 @@ mode  = "auto"
 
 **降级**：`search` 返回空 `hits` 时，队列照常出（只按到期分），讲解区显示"暂无历史，按默认讲法"；`prepare` 返回 `status:"empty"` 时同样处理。**不要**伪造记忆或补一段通用建议。
 
-**本机复核结论**（用仓库自身的 `analyze_text` 与 SQLite FTS5 复现）：
+**query 长度是硬约束**：真实 Server 上把整队 20 个知识点拼成 240 字符的 query，`context/prepare` 直接返回 `status:"empty"`；收敛到"首位卡的章节 + 知识点"（约 20 字符）后稳定返回 `ready`。命中集合本身不依赖 query——它来自 `entries/list` 的清单对齐，所以 query 只需要服务"教练备忘"这一条路径。`n`n**本机复核结论**（用仓库自身的 `analyze_text` 与 SQLite FTS5 复现）：
 
 - 中文记忆文本入库后形如 `kp db ch6 mvcc readview mvcc u_7684 read view ...`，`隔离级别`、`read view 快照` 都能召回该条。
 - 纯 FTS 会偏宽：`BCNF 超键` 对另一条偏好条目也产生了候选，但服务端的覆盖率准入（`admits_fts_text`，`BCNF 超键` 要求命中 2 个 token）把它挡掉了。

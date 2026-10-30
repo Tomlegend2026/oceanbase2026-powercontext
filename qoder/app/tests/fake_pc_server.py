@@ -85,9 +85,16 @@ def search(payload: dict):
     return {"mode": "fts", "hits": hits[: int(payload.get("limit", 10))]}
 
 
-@app.get("/v1/memory/entries/list")
-def entries(scope_id: str | None = None):
-    return {"items": [_entry(entry_id) for entry_id in STATE["entries"]]}
+@app.post("/v1/memory/entries/list")
+def entries(payload: dict | None = None):
+    payload = payload or {}
+    include_inactive = bool(payload.get("include_inactive"))
+    items = [
+        _entry(entry_id)
+        for entry_id in STATE["entries"]
+        if include_inactive or _entry(entry_id)["state"] == "active"
+    ]
+    return {"entries": items}
 
 
 @app.post("/v1/memory/entries/revise")

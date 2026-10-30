@@ -23,7 +23,7 @@ class Gateway(Protocol):
     def ensure_scope(self, title: str, summary: str, idempotency_key: str) -> str: ...
     def remember(self, scope_id: str, *, kind: str, text: str, reason: str | None = None) -> dict[str, Any]: ...
     def search(self, scope_id: str, query: str, *, limit: int = 20, mode: str = "auto") -> dict[str, Any]: ...
-    def entries(self, scope_id: str) -> list[dict[str, Any]]: ...
+    def entries(self, scope_id: str, *, include_inactive: bool = False) -> list[dict[str, Any]]: ...
     def prepare(self, scope_id: str, query: str, *, max_bytes: int = 2000) -> dict[str, Any]: ...
     def revise(self, scope_id: str, citation: dict[str, Any], *, kind: str, text: str) -> dict[str, Any]: ...
     def retire(self, scope_id: str, citation: dict[str, Any], *, reason: str = "已掌握") -> dict[str, Any]: ...
@@ -106,17 +106,14 @@ class Service:
 
     # ---------- 检索 ----------
 
-    def _query_for(self, cards: list[dict[str, Any]]) -> str:
-        if not cards:
-            return ""
-        parts: list[str] = []
-        seen: set[str] = set()
-        for card in cards:
-            for value in (card.get("chapter_title"), card.get("kp_name")):
-                if value and value not in seen:
-                    seen.add(value)
-                    parts.append(str(value))
-        return " ".join(parts)[:240]
+    @staticmethod
+    def _focus_query(card: dict[str, Any]) -> str:
+        """聚焦到当前最该练的一张卡：章节 + 知识点。
+
+        短 query 才能过服务端的覆盖率准入门槛；把整队知识点拼进去会让 context/prepare 返回 empty。
+        """
+        parts = [str(card.get("chapter_title") or ""), str(card.get("kp_name") or "")]
+        return " ".join(part for part in parts if part)[:120]
 
     @staticmethod
     def _kp_from_text(text: str) -> str | None:
@@ -175,6 +172,12 @@ class Service:
         degraded = False
         coach_note = ""
         hits: list[dict[str, Any]] = []
+        answers_today = dbmod.answers_today_by_kp(self.conn, self.today)
+
+        def rank(current_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return scoring.rank(cards, hits=current_hits, answers_today=answers_today, today=self.today)
+
+        items = rank(hits)
 
         if personalization:
             if not self.memory_ready():
@@ -183,26 +186,29 @@ class Service:
                 mode = "on"
                 scope = self.scope()
                 if scope:
-                    query = self._query_for(cards)
                     try:
-                        # 先拿全量清单判断命中（记忆条目少、按 kp 精确对齐），
-                        # 再用 search 做聚焦召回，避免长 query 撞上覆盖率准入门槛而漏掉薄弱点。
-                        hits = self._entry_hits(self.gateway.entries(scope))
-                        if query:
+                        # 命中集合先来自全量清单：记忆条目少、按 kp 精确对齐，不受 query 表达影响。
+                        inventory = self._entry_hits(self.gateway.entries(scope))
+                        items = rank(inventory)
+                        hits = inventory
+
+                        # 再用队列首位（也就是最该练的那张卡）做一次聚焦检索与上下文组装。
+                        # 长 query 会撞上服务端的覆盖率准入门槛，导致 prepare 返回 empty。
+                        if items:
+                            query = self._focus_query(items[0])
                             found = self.gateway.search(scope, query, limit=20)
-                            hits = self._merge_hits(hits, self._resolve_hits(found.get("hits") or []))
+                            merged = self._merge_hits(hits, self._resolve_hits(found.get("hits") or []))
+                            if len(merged) != len(hits):
+                                hits = merged
+                                items = rank(hits)
                             prepared = self.gateway.prepare(scope, query)
                             if prepared.get("status") == "ready" and prepared.get("content"):
                                 coach_note = str(prepared["content"])
                     except PowerContextError:
                         degraded, mode, hits, coach_note = True, "offline", [], ""
+                        items = rank([])
 
-        items = scoring.rank(
-            cards,
-            hits=hits,
-            answers_today=dbmod.answers_today_by_kp(self.conn, self.today),
-            today=self.today,
-        )[:10]
+        items = items[:10]
         return {"items": items, "mode": mode, "degraded": degraded, "coach_note": coach_note, "hits": hits}
 
     def build_today(self, personalization: bool | None = None) -> dict[str, Any]:
@@ -379,7 +385,7 @@ class Service:
             note = "记忆离线：先启动 PowerContext"
         else:
             try:
-                entries = self.gateway.entries(scope)
+                entries = self.gateway.entries(scope, include_inactive=True)
             except PowerContextError as exc:
                 note = f"读取记忆失败：{exc}"
         cards = dbmod.all_cards(self.conn)
@@ -501,7 +507,9 @@ class Service:
                 caps = self.gateway.capabilities()
             except PowerContextError:
                 caps = {}
-        modes = caps.get("memory", {}).get("search_modes") if isinstance(caps, dict) else None
+        modes = None
+        if isinstance(caps, dict):
+            modes = caps.get("search_modes") or (caps.get("memory") or {}).get("search_modes")
         return {
             "pc_ready": ready,
             "capabilities": caps,

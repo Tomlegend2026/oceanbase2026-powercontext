@@ -37,17 +37,23 @@ if (-not (Test-Path "$BaseUrl")) {
     catch { throw "应用没在 $BaseUrl 运行：先执行 .\scripts\start.ps1，再截图。" }
 }
 
-$profile = Join-Path $env:TEMP "recallcoach-shots"
+$profile = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\app\.runtime\edge-shots"))
 $tabs = [ordered]@{ today = "今日队列"; replay = "我记得你"; compare = "对照"; evidence = "证据" }
+# 每次用干净的浏览器配置，避免缓存住旧的 JS/CSS
+Remove-Item $profile -Recurse -Force -ErrorAction SilentlyContinue
 $ok = 0
 
 foreach ($name in $tabs.Keys) {
     $target = Join-Path $OutDir "$name.png"
     if (Test-Path $target) { Remove-Item $target -Force }
     Write-Host "截取 $($tabs[$name]) ..." -ForegroundColor Cyan
+    # Chromium 会把无关警告写到 stderr，别让 ErrorActionPreference=Stop 把它当成致命错误。
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & $browser --headless=new --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check `
         --window-size="$Width,$Height" --virtual-time-budget=8000 `
-        --user-data-dir="$profile" --screenshot="$target" "$BaseUrl/#$name" 2>$null | Out-Null
+        --user-data-dir="$profile" --screenshot="$target" "$BaseUrl/#$name" 2>&1 | Out-Null
+    $ErrorActionPreference = $previous
     if ((Test-Path $target) -and (Get-Item $target).Length -gt 10240) {
         Write-Host "  -> $target（$([math]::Round((Get-Item $target).Length / 1kb)) KB）" -ForegroundColor Green
         $ok++
@@ -59,7 +65,7 @@ foreach ($name in $tabs.Keys) {
 Write-Host ""
 if ($ok -gt 0) {
     Write-Host "完成 $ok/4 张，位置：$OutDir"
-    Write-Host "接着改 site/index.html 的 #gallery，把占位块换成 <img src=\"assets\<name>.png\">。" -ForegroundColor Yellow
+    Write-Host '接着改 site/index.html 的 #gallery，把占位块换成 <img src="assets/today.png"> 这类真实标签。' -ForegroundColor Yellow
 } else {
     Write-Warning "一张都没成功。可以直接用 Win+Shift+S 手工截四个页签，存成同名文件。"
 }

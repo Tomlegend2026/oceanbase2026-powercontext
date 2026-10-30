@@ -62,8 +62,8 @@ class FakeGateway:
                 hits.append({"citation": entry["citation"], "text": entry["text"], "kind": entry["kind"]})
         return {"mode": "fts", "hits": hits}
 
-    def entries(self, scope_id: str) -> list[dict]:
-        self.calls.append(("entries",))
+    def entries(self, scope_id: str, *, include_inactive: bool = False) -> list[dict]:
+        self.calls.append(("entries", include_inactive))
         return [dict(entry) for entry in self.store.values()]
 
     def prepare(self, scope_id: str, query: str, *, max_bytes: int = 2000) -> dict:

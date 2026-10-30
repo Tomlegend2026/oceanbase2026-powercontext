@@ -87,9 +87,21 @@ function breakdownChips(item) {
     .join("");
 }
 
+function coachNoteHtml(raw) {
+  // prepared context 带大量审计元数据：页面只展示可直接读的条目，原文折叠备查。
+  const bullets = (raw.match(/\[kp:[^\]\n]+\][^\n]*/g) || [])
+    .map((line) => line.replace(/\s+$/, "").replace(/^>\s*/, ""))
+    .slice(0, 4);
+  const body = bullets.length
+    ? `<ul class="coach-list">${bullets.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`
+    : `<p class="muted">这段上下文里没有可直接展示的条目。</p>`;
+  return `<div class="coach-head">教练备忘 <span class="muted">来自 PowerContext 的历史记忆</span></div>
+    ${body}
+    <details><summary>查看原始上下文</summary><pre class="coach-raw">${esc(raw)}</pre></details>`;
+}
+
 async function loadToday() {
-  const mode = state.personalization ? "on" : "off";
-  try {
+  const mode = state.personalization ? "on" : "off";  try {
     const data = await api(`/api/today?personalization=${mode}`);
     state.sessionId = data.session_id;
 
@@ -98,7 +110,7 @@ async function loadToday() {
       note.textContent = "记忆离线：当前只按到期排序，不会读写记忆。启动 PowerContext 后刷新即可。";
       note.classList.remove("hidden");
     } else if (data.coach_note) {
-      note.textContent = `教练备忘\n\n${data.coach_note}`;
+      note.innerHTML = coachNoteHtml(data.coach_note);
       note.classList.remove("hidden");
     } else if (data.mode === "on") {
       note.textContent = "暂无历史记忆：这是本轮第一次，按默认讲法开始。";

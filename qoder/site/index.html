@@ -95,7 +95,7 @@
 
     <section id="evidence">
       <h2>记忆不是装饰</h2>
-      <p class="lede">同一批到期卡片，只切换"读不读记忆"。下面是一次真实运行的输出（假 Server 联调，字段与真实接口一致）：</p>
+      <p class="lede">同一批到期卡片，只切换"读不读记忆"。下面是接真实 PowerContext 1.2.0 运行时的输出：</p>
 
       <div class="grid two">
         <article class="panel">
@@ -148,7 +148,7 @@
           <tr><td>V2 写入闭环</td><td>阈值、去重、修订</td><td>skip → write(v1) → revise(v2)</td></tr>
           <tr><td>V3 排序改变</td><td>记忆确实改变出题顺序</td><td>db-022 从榜外到 #1，diff 5 条</td></tr>
           <tr><td>V4 修订与退休</td><td>人改记忆，队列立刻变</td><td>退休后 diff 归零</td></tr>
-          <tr><td>V5 上下文注入</td><td>教练备忘来自记忆</td><td>content 104 字符，卡片标注 entry_id</td></tr>
+          <tr><td>V5 上下文注入</td><td>教练备忘来自记忆</td><td>content 735 字符，卡片标注 entry_id</td></tr>
           <tr><td>V6 重启后仍在</td><td>记忆不是内存态</td><td>重启前后条目数一致</td></tr>
           <tr><td>V7 Dashboard</td><td>第三方视角能看到同一批条目</td><td>需人工登录核对</td></tr>
         </tbody>
@@ -159,18 +159,21 @@
     <section id="gallery">
       <h2>界面</h2>
       <div class="grid three">
-        <!-- 发布前把占位换成真实截图：<img src="assets/today.png" alt="今日队列"> -->
         <figure class="shot">
-          <div class="shot-placeholder">截图位：今日队列（含分数拆解）</div>
-          <figcaption>待替换为真实截图</figcaption>
+          <img src="assets/today.png" alt="今日队列：教练备忘、卡片分数拆解与命中的 entry_id">
+          <figcaption>今日队列：上方是记忆生成的教练备忘，每张卡显示分数拆解与命中条目</figcaption>
         </figure>
         <figure class="shot">
-          <div class="shot-placeholder">截图位：我记得你（记忆时间线）</div>
-          <figcaption>待替换为真实截图</figcaption>
+          <img src="assets/replay.png" alt="我记得你：记忆时间线与改写入口">
+          <figcaption>我记得你：条目、版本、命中的卡片，可改写或标记已掌握</figcaption>
         </figure>
         <figure class="shot">
-          <div class="shot-placeholder">截图位：A/B 对照</div>
-          <figcaption>待替换为真实截图</figcaption>
+          <img src="assets/compare.png" alt="对照：个性化与基线的位次差异">
+          <figcaption>对照：同一批卡片，读记忆与不读记忆的位次差异</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/evidence.png" alt="证据：每次调用的 request_id 与耗时">
+          <figcaption>证据：每次 PowerContext 调用都可追溯，可导出 Markdown</figcaption>
         </figure>
       </div>
     </section>

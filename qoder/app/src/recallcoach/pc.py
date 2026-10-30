@@ -25,7 +25,7 @@ class PowerContextError(RuntimeError):
 
 def _scrub(value: Any, *, depth: int = 0) -> Any:
     """截断过长字符串并去掉常见凭据形态，避免审计日志泄漏。"""
-    if depth > 4:
+    if depth > 8:
         return "…"
     if isinstance(value, str):
         text = value.replace("\n", " ")
@@ -217,14 +217,14 @@ class MemoryGateway:
         )
         return {"mode": payload.get("mode"), "hits": payload.get("hits") or []}
 
-    def entries(self, scope_id: str) -> list[dict[str, Any]]:
+    def entries(self, scope_id: str, *, include_inactive: bool = False) -> list[dict[str, Any]]:
         payload = self._call(
             "memory.entries.list",
-            "GET",
+            "POST",
             "/v1/memory/entries/list",
-            params={"scope_id": scope_id},
+            body={"scope_id": scope_id, "include_inactive": include_inactive},
         )
-        items = payload.get("items") or payload.get("entries") or payload.get("data") or []
+        items = payload.get("entries") or payload.get("items") or payload.get("data") or []
         return [self._normalize_entry(item) for item in items]
 
     @staticmethod
