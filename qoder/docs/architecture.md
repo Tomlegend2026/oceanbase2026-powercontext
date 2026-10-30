@@ -39,10 +39,10 @@ app.db                PowerContext Server (127.0.0.1:8000)
 ## 4. 一次会话的时序
 
 1. `GET /api/today?personalization=on`
-   - `store` 读取到期卡片；
-   - `memory/search`（query 由课程 + 章节 + 知识点拼装，`limit=20`，`mode=auto`）→ 取 weakness / misconception 命中；
+   - `store` 读取全部到期卡片；
+   - `memory/entries/list` 取全量记忆 → 按 `kp_id` 对齐命中；`memory/search`（query 由前 3 张卡的章节 + 知识点拼装）补充语义召回，两者按 `entry_id` 合并；
    - `context/prepare`（`assembly.sections=[{family:memory, limit:4}]`，`max_bytes=2000`）→ 教练备忘；
-   - `scoring` 计算分数与拆解 → 返回队列。
+   - `scoring` 对全部到期卡打分，取前 10 返回。
 2. `POST /api/answer` → 写 `answers`、更新 `schedule` → `memory_policy` 判定是否写入 → 返回决策与 `entry_id`。
 3. `POST /api/session/end` → 写 1 条 `progress`（+ 可选 `commitment`）。
 4. `POST /api/memory/{entry_id}/revise|retire` → 重算队列并返回顺序变化。
@@ -150,6 +150,8 @@ score    = base + weak + miscon + progress + fatigue
 ```
 
 `hit()` 为 0/1：该 kp 是否被本次 `memory/search` 命中。`score_breakdown` 必须逐项返回，页面直接展示。
+
+打分对象是**全部到期卡**，排序后取前 10；答错的卡当天仍保持到期（`due_at = 今天`），否则"答错一次就被踢出今日队列"，既不符合复习直觉，也让"错误 → 记忆 → 重排"的演示无法在同一轮里完成。
 
 ## 8. 证据埋点
 

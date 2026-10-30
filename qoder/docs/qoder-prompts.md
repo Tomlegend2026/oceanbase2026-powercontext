@@ -2,6 +2,48 @@
 
 用法：一个里程碑一个会话。开新会话先粘"通用前置"，再粘该里程碑的任务。每完成一个里程碑：跑验收 → 截图/录屏 → 提交 → 在 [qoder-log.md](qoder-log.md) 补一行。
 
+---
+
+## 第二轮任务书（代码已可运行，Qoder 接手真实环境与收尾）
+
+现状：`app/` 已有一套可运行实现（34 个单测通过，用假 PowerContext 端到端跑通 skip → write → revise 与 A/B 重排）。第一次接真实 Server 必然遇到字段或行为差异，这一轮就做"跑实 + 补测 + 发布"。
+
+记录要求：如实写"在已有代码上继续开发、修复兼容性问题、补齐测试与站点"，**不要声称从零生成**。评审看的是 Qoder 在关键环节是否真的参与了工作，而不是叙事漂亮。
+
+### Q1 接真实 Server 并修兼容问题（必做）
+
+```
+读 app/ 现有实现与 docs/architecture.md。启动真实 PowerContext（见 RUNBOOK），
+把应用接上去，逐个接口核对真实响应形状与你代码里的解析逻辑：
+- /v1/scopes、/v1/memory/remember、/v1/memory/search、/v1/memory/entries/list
+- /v1/memory/entries/revise、/v1/memory/entries/retire、/v1/context/prepare
+差异点不要猜：先用 curl 打印真实响应，再改解析代码，并在 tests/ 里补一条回归测试。
+改完跑 doctor，贴出 capabilities 与真实 scope。
+```
+
+验收：`doctor` 全绿；连续答错同一张卡三次得到 skip → write → revise；`/api/compare` 有位次差异。
+
+### Q2 端到端测试（必做）
+
+```
+补一条 e2e 测试：用 tests/fake_pc_server.py 起假服务（或 testcontainers 起真服务），
+覆盖 V1–V6 的关键断言；确保 pytest 在干净环境一次通过。
+```
+
+### Q3 站点（必做，M9）
+
+见本文件 M9 一节；素材用 Q1/Q2 的真实截图。
+
+### Q4 加分项（有余力）
+
+- 使用效果统计：每周练习量、正确率曲线、连续天数。
+- 导出 Anki/CSV。
+- 记忆命中的"为什么"解释（把 breakdown 变成一句人话）。
+
+---
+
+## 第一轮任务书（按 spec 从零实现，保留备查）
+
 ## 通用前置（每个会话都粘）
 
 ```

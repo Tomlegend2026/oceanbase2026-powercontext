@@ -79,14 +79,16 @@ MAX_TEXT_CHARS = 300        # 远低于 API 的 8192 字节上限
 
 | 决策点 | 调用 | 处理 |
 |---|---|---|
-| 生成今日队列 | `POST /v1/memory/search` | 命中集合参与打分 |
+| 生成今日队列 | `GET /v1/memory/entries/list` + `POST /v1/memory/search` | 清单给出按 kp 精确对齐的命中集合；search 补充语义召回；两者合并后参与打分 |
 | 单卡讲解 | `POST /v1/context/prepare` | `content` 作为"教练备忘"置于题目上方 |
 | 次日首屏 | `search`（query 含"下次"） | 显示"上次停在 db-008" |
 
-**query 构造**（决定召回质量，别把整段题面丢进去）：
+**为什么清单和检索都用**：记忆条目总量只有几十条，用清单可以按 `kp_id` 精确对齐、不漏条目；而长 query 会撞上服务端的覆盖率准入门槛（见下），单靠 search 会漏掉"看似无关"的薄弱点。所以清单负责完整性，search 负责语义补充，两者按 `entry_id` 去重合并。
+
+**query 构造**（决定语义召回质量，别把整段题面丢进去）：
 
 ```
-query = f"{course.title} {chapter} {kp.name} {kp.name}"   # 知识点名重复一次提升权重
+query = 前 3 张到期卡的 chapter_title + kp_name（去重拼接，截断 180 字符）
 limit = 20
 mode  = "auto"
 ```

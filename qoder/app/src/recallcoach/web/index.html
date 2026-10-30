@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RecallCoach · 数据库系统复习教练</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>RecallCoach</h1>
+      <p class="sub">数据库系统复习教练 · 记住你的薄弱点，再决定今天先练什么</p>
+    </div>
+    <div id="status" class="pills"></div>
+  </header>
+
+  <nav id="tabs">
+    <button data-tab="today" class="active">今日复习</button>
+    <button data-tab="replay">我记得你</button>
+    <button data-tab="compare">对照</button>
+    <button data-tab="evidence">证据</button>
+    <span class="spacer"></span>
+    <button id="refresh" class="ghost">刷新</button>
+  </nav>
+
+  <main>
+    <section id="tab-today" class="tab active">
+      <div id="coach-note" class="note hidden"></div>
+      <div class="toolbar">
+        <span id="queue-meta" class="muted"></span>
+        <span class="spacer"></span>
+        <label class="toggle"><input type="checkbox" id="personalization" checked> 个性化（关闭即为纯到期排序）</label>
+        <button id="end-session" class="ghost">结束本轮</button>
+      </div>
+      <div id="queue" class="queue"></div>
+      <div id="session-summary" class="note hidden"></div>
+    </section>
+
+    <section id="tab-replay" class="tab">
+      <p class="muted">这里的每一条都是 PowerContext 里的记忆条目。改一句、或标记已掌握，今日队列会立刻重排。</p>
+      <div id="replay-list" class="replay"></div>
+    </section>
+
+    <section id="tab-compare" class="tab">
+      <p class="muted">同一批卡片：左边读记忆，右边不读。位次差异就是记忆的作用。</p>
+      <div id="compare" class="compare"></div>
+    </section>
+
+    <section id="tab-evidence" class="tab">
+      <div class="toolbar">
+        <span class="muted">每次 PowerContext 调用都有 request_id，可与 Server 日志对上。</span>
+        <span class="spacer"></span>
+        <button id="export-report" class="ghost">导出 Markdown 报告</button>
+      </div>
+      <div id="evidence-table" class="evidence"></div>
+    </section>
+  </main>
+
+  <div id="answer-panel" class="panel hidden">
+    <div class="panel-card">
+      <div class="panel-head">
+        <span id="panel-chapter" class="muted"></span>
+        <button id="panel-close" class="ghost">关闭</button>
+      </div>
+      <h2 id="panel-front"></h2>
+      <div id="panel-answer" class="hidden">
+        <h3>答案</h3>
+        <p id="panel-back"></p>
+        <h3>解析</h3>
+        <p id="panel-explanation"></p>
+        <div class="rating">
+          <button data-correct="0" data-confidence="1">忘了</button>
+          <button data-correct="0" data-confidence="2">勉强</button>
+          <button data-correct="1" data-confidence="4">会了</button>
+        </div>
+        <label class="cause">
+          错因（可选）
+          <select id="panel-cause">
+            <option value="">未选择</option>
+            <option value="概念混淆">概念混淆（会写成 misconception 记忆）</option>
+            <option value="计算失误">计算失误</option>
+            <option value="看错题">看错题</option>
+            <option value="没学过">没学过</option>
+          </select>
+        </label>
+      </div>
+      <button id="panel-reveal">显示答案</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

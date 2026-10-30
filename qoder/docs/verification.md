@@ -42,10 +42,10 @@ cd qoder
 ## V2 写入闭环：两次失败才写，第三次是修订
 
 - **初始数据**：V1 的 scope；目标卡 `db-022`（kp `db/ch6/mvcc-readview`）。
-- **输入序列**（跨两个会话，用 `RECALLCOACH_TODAY` 固定日期）：
-  1. 会话 A：`db-022` 答错，自评 1 → 预期 `skip`（`lapses=1`）。
-  2. 会话 B（次日）：`db-022` 再答错，自评 2 → 预期 `write weakness` **v1**。
-  3. 会话 B 内第三次：`db-022` 再答错 → 预期 `revise` 成 **v2**，`entry_id` 不变。
+- **输入序列**（答错的卡当天仍到期，所以同一轮里就能跑完；跨会话也成立）：
+  1. 第 1 次答错，自评 1 → 预期 `skip`（`lapses=1`，只更新调度）。
+  2. 第 2 次答错，自评 2 → 预期 `write weakness` **v1**，返回 `entry_id`。
+  3. 第 3 次答错 → 预期 `revise` 成 **v2**，`entry_id` 不变。
 - **预期**：`entries/list` 中 `db/ch6/mvcc-readview` 只有 1 条 active weakness；文本末尾出现"第 3 次"。
 - **证据**：三条决策记录（`skip` / `write` / `revise`）+ `entries/list` 截图 + UI toast。
 
@@ -53,9 +53,10 @@ cd qoder
 
 - **初始数据**：V2 结束状态（1 条 weakness 命中 `db-022`）。
 - **操作**：`GET /api/today?personalization=on` 与 `=off`。
-- **预期**（示例值，实际以输出为准）：
-  - `off`：`db-022` 排第 7 位，`score = 0.41`；
-  - `on`：`db-022` 排第 1 位，`score = 0.41 + 1.20 = 1.61`，`memory_hits` 含该 `entry_id`。
+- **预期**（本机实测值）：
+  - `off`：`db-022` 不进前五（所有卡基础分 0.1，按 id 排到第 22 位）；
+  - `on`：`db-022` 排第 1 位，`score = 0.1 + 1.20 = 1.30`，`memory_hits` 含该 `entry_id`；
+  - 其余卡依次后移一位，`diff` 列出 `db-022` 与 `db-001..004` 的位次变化。
 - **证据**：`/api/compare` 截图（两列并排 + 差异高亮）+ 审计日志中两次 `memory.search`。
 
 ## V4 修订与退休：人改记忆，排序立刻变
