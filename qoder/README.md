@@ -75,24 +75,27 @@ qoder/
 |---|---|
 | 方案文档、记忆策略、验证样例 | ✅ 就绪 |
 | 种子题库（28 卡 / 7 章 / 无重复 id） | ✅ 结构已校验 |
-| 环境模板、启动与验证脚本 | ✅ 通过 PowerShell 解析校验（待首次联网执行） |
-| PowerContext 技术层验证脚本 | ✅ 就绪（无需应用即可跑） |
-| 应用业务代码（`app/`） | 🚧 由 Qoder 按 [任务书](docs/qoder-prompts.md) 产出 |
-| 展示站与使用效果材料 | 🚧 待应用跑通后补齐 |
+| 应用（`app/`）：后端 + 前端 + 测试 | ✅ 可运行，34 个测试通过 |
+| 端到端验证脚本（V1–V7） | ✅ 在假 Server 上 8/8 通过（V7 需人工登录 Dashboard） |
+| 展示站（`site/`） | ✅ 页面就绪，待替换三张真实截图 |
+| 使用效果材料 | 🚧 需要真实用户与截图 |
 
 ### 已验证 / 未验证
 
-- **已验证**：种子文件可解析（28 卡、7 章、id 与 kp_id 唯一、章节引用有效）；四个 PowerShell 脚本零解析错误；提交基线为 `2026-competition-ecosystem` 的 `d647275c`；中文记忆可被检索（用仓库自身的 `analyze_text` + SQLite FTS5 复现，见 [memory-design.md](docs/memory-design.md) 第 6 节）。
-- **未验证**：真实 PowerContext Server 上的调用（本机未安装 uv / PowerContext，当前环境禁止联网安装；用源码直接拉起时缺 `casbin` 等可选依赖）。首次运行 `.\scripts\verify-powercontext.ps1` 即可确认；该脚本对响应字段做了防御式解析，不匹配时保留原始 JSON 供核对。
+- **已验证**：种子文件可解析（28 卡、7 章、id 与 kp_id 唯一、章节引用有效）；全部 PowerShell 脚本零解析错误；提交基线为 `2026-competition-ecosystem` 的 `d647275c`；中文记忆可被检索（用仓库自身的 `analyze_text` + SQLite FTS5 复现，见 [memory-design.md](docs/memory-design.md) 第 6 节）；`pytest` 34 项通过；`scripts/verify.ps1` 在假 PowerContext 上跑完 V1–V6 全绿（V7 因假服务没有 Dashboard 记为 WARN）。
+- **未验证**：**真实** PowerContext Server 上的调用（本机未安装 uv，当前环境禁止联网安装；用源码直接拉起时缺 `casbin` 等可选依赖）。接真实 Server 后先跑 `.\scripts\verify-powercontext.ps1`，再跑 `.\scripts\verify.ps1`；两份脚本都会保留原始响应，字段不匹配时能直接定位。
 
 ## 验证
 
-- 技术层（现在就能跑）：`.\scripts\verify-powercontext.ps1` —— 建独立 scope、写入两条记忆、检索、组装上下文，产物写入 `evidence/verify/<时间戳>/`。
-- 端到端（应用完成后）：[docs/verification.md](docs/verification.md) 的 V1–V7。
+- 技术层：`.\scripts\verify-powercontext.ps1` —— 建独立 scope、写入两条记忆、检索、组装上下文，产物写入 `evidence/verify/<时间戳>/`。
+- 端到端：`.\scripts\verify.ps1` —— 独立 scope + 独立数据库 + 8082 端口的隔离实例，跑 V1–V7 并出 `summary.md`。
+- 手工步骤与预期值：[docs/verification.md](docs/verification.md)。
 
 ## 开发过程与 Qoder
 
-主要开发工作在 Qoder 中完成，过程记录见 [docs/qoder-log.md](docs/qoder-log.md)（含 Qoder 账号 UID 与逐里程碑证据索引）。本仓库的文档、种子数据与脚本是交给 Qoder 的前置资产，应用代码由 Qoder 按 [docs/qoder-prompts.md](docs/qoder-prompts.md) 实现。
+过程记录见 [docs/qoder-log.md](docs/qoder-log.md)（含 Qoder 账号 UID 与逐里程碑证据索引），任务书见 [docs/qoder-prompts.md](docs/qoder-prompts.md)。
+
+坦白说明：本仓库的方案、种子数据与应用初版由 AI 助手先行完成；Qoder 接手的是"接真实 Server 修兼容、补 E2E、做站点"这一轮，记录按实际发生的内容写，不写"从零生成"。
 
 ## 来源与许可
 

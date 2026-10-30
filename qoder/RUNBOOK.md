@@ -101,9 +101,21 @@ cd qoder
 
 脚本会新建一个独立的验证 scope（`recallcoach-verify-<时间戳>`），写入两条记忆、做检索、组装上下文，把每一步的请求与响应写到 `evidence/verify/<时间戳>/`，最后打印 PASS/FAIL 表。它不会碰你个人的 scope。
 
-## 5. 安装并初始化应用
+## 4b. 端到端验证（应用侧，V1–V7）
 
-> 应用代码由 Qoder 按 [docs/qoder-prompts.md](docs/qoder-prompts.md) 产出（M1 起）。此节在 M1 完成后可用。
+```powershell
+cd qoder
+.\scripts\verify.ps1
+```
+
+它会：新建独立 scope → 在 **8082** 端口起一个隔离的应用实例（独立 `app.db`）→ 跑 V1–V7 → 把 `summary.md`、每一步的原始 JSON、审计日志写进 `evidence/verify/<时间戳>/` → 关掉实例。
+
+- 不碰你 8080 上的日常数据和 scope。
+- 需要 PowerContext 已就绪；连别的地址用 `-PcUrl` / `-PcToken`。
+- V7 只检查 Dashboard 入口可达，"用 token 登录后看到同一 entry_id"需要人工截图。
+- macOS/Linux 没有 PowerShell 脚本时可手工执行 [docs/verification.md](docs/verification.md) 里的等价 curl。
+
+## 5. 安装并初始化应用
 
 ```powershell
 cd qoder\app
@@ -146,17 +158,43 @@ cd qoder
 | 验证不污染个人数据 | 始终用 `verify-powercontext.ps1` 或 `RECALLCOACH_SCOPE_TITLE` 指定的独立 scope |
 | 彻底重装 | 删 `%USERPROFILE%\.recallcoach`，重跑第 1–3 节 |
 
-## 8. macOS / Linux 差异
+## 8. macOS / Linux
+
+没有提供 `.sh` 脚本（避免发出一份没人验证过的脚本），下面是可以直接粘的命令。
 
 ```bash
+# 1) 安装并生成受保护的配置（token 随机）
 uv tool install --force "powercontext[cli,server]==1.2.0"
-export POWERCONTEXT_CLIENT_SERVER_URL=http://127.0.0.1:8000
+mkdir -p ~/.recallcoach/data
+TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+cat > ~/.recallcoach/powercontext.env <<EOF
+POWERCONTEXT_SERVER_ACCESS_MODE=enforced
+POWERCONTEXT_SERVER_AUTH_TOKEN=$TOKEN
+POWERCONTEXT_SERVER_DASHBOARD_ENABLED=true
+POWERCONTEXT_HOME=$HOME/.recallcoach/data
+EOF
+chmod 600 ~/.recallcoach/powercontext.env
+
+# 2) 启动 Server（前台，另开一个终端）
 powercontext config validate --env-file ~/.recallcoach/powercontext.env
-chmod 600 ~/.recallcoach/powercontext.env          # 代替 icacls
 powercontext server run --env-file ~/.recallcoach/powercontext.env
+
+# 3) 验证 Server
+export POWERCONTEXT_CLIENT_SERVER_URL=http://127.0.0.1:8000
+export POWERCONTEXT_CLIENT_API_TOKEN="$TOKEN"
+powercontext ready && powercontext capabilities
+
+# 4) 应用
+cd qoder/app
+uv sync
+cp ../deploy/app.env.example .env
+sed -i.bak "s|replace-with-token-from-powercontext-env|$TOKEN|" .env    # macOS 用 sed -i ''
+uv run python -m recallcoach.cli init-db --seed ../seed/db-systems.cards.json
+uv run python -m recallcoach.cli doctor
+uv run uvicorn recallcoach.main:app --port 8080
 ```
 
-其余步骤相同，把 `.\scripts\*.ps1` 换成 `bash scripts/*.sh`（脚本在 M8 一并补齐）。
+端到端验证在 macOS/Linux 上手工执行 [docs/verification.md](docs/verification.md) 里的步骤；`scripts/verify.ps1` 只用于 Windows。
 
 ## 9. 故障排查
 
@@ -165,7 +203,8 @@ powercontext server run --env-file ~/.recallcoach/powercontext.env
 | `powercontext` 不是可识别命令 | 重开终端；或 `uv tool update-shell` |
 | 请求返回 401 | 应用 `.env` 里的 token 与 `powercontext.env` 不一致 |
 | `ready` 显示 `degraded` | 未配置模型时的预期表现；若数据库项异常才是真故障，看 Server 窗口日志 |
-| 端口被占用 | `Get-NetTCPConnection -LocalPort 8000` / `-LocalPort 8080`，换端口或结束占用进程 |
+| 端口被占用 | `Get-NetTCPConnection -LocalPort 8000` / `-LocalPort 8080`；验证脚本另用 8082，被占时加 `-AppPort 8083` |
+| 脚本提示"禁止运行脚本" | `Set-ExecutionPolicy -Scope Process Bypass`（只影响当前窗口） |
 | 中文检索召回为空 | 确认条目已写入（`entries/list`）；把 query 换成记忆文本里出现过的词；详见 [memory-design.md](docs/memory-design.md) 第 6 节 |
 | `icacls` 报错 | 文件 owner 不是当前用户时先改 owner，再重试 |
 | 应用启动报缺模块 | 在 `app\` 下执行 `uv sync`，不要用系统 Python |

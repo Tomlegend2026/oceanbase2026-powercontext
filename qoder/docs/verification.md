@@ -87,11 +87,16 @@ cd qoder
 
 ```powershell
 cd qoder
-.\scripts\start.ps1
-# 应用侧 V1–V7（M8 提供）
-.\scripts\verify.ps1 -Scenario all
-# 打开证据目录
-explorer .\evidence\verify
+.\scripts\start.ps1            # 起 PowerContext + 应用
+.\scripts\verify.ps1           # 另起一个隔离实例（8082）跑 V1–V7
+explorer .\evidence\verify     # 证据目录
 ```
 
-`verify.ps1` 结束时打印"预期 vs 实际"对照表，并把 `summary.md` 写到证据目录，可直接作为提交材料里的验证样例附件。
+`verify.ps1` 的设计：
+
+- 新建独立 scope、独立 `app.db`、独立端口，**不碰日常复习数据**；
+- 结束后自动停掉隔离实例，`-KeepRunning` 可保留现场；
+- 结束时打印"预期 vs 实际"表，并把 `summary.md`、每一步原始 JSON、`memory_audit.jsonl` 写进 `evidence/verify/<时间戳>/`，可直接作为提交材料里的验证样例附件；
+- V7 只验 Dashboard 入口可达，登录后核对同一条 `entry_id` 需要人工截图。
+
+在本机用假 PowerContext（`app/tests/fake_pc_server.py`）跑过一次的结果：PASS 8 / WARN 1（V7）/ FAIL 0。接真实 Server 后需复跑，预期一致。
