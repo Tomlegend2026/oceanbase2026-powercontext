@@ -1,0 +1,295 @@
+{
+  "_note": "本项目自写题库，未复用第三方题库或教材习题原文。覆盖数据库系统七章，28 张卡；kp_id 与 app.db 的 kp.id 一致。",
+  "course": { "id": "db", "title": "数据库系统" },
+  "chapters": [
+    { "id": "db/ch1", "title": "第1章 关系模型与关系代数" },
+    { "id": "db/ch2", "title": "第2章 SQL" },
+    { "id": "db/ch3", "title": "第3章 模式设计与范式" },
+    { "id": "db/ch4", "title": "第4章 索引与物理存储" },
+    { "id": "db/ch5", "title": "第5章 查询处理与优化" },
+    { "id": "db/ch6", "title": "第6章 事务与并发控制" },
+    { "id": "db/ch7", "title": "第7章 崩溃恢复" }
+  ],
+  "cards": [
+    {
+      "id": "db-001",
+      "kp_id": "db/ch1/fk",
+      "kp_name": "外键与参照完整性",
+      "chapter": "db/ch1",
+      "front": "定义 FOREIGN KEY (dept_id) REFERENCES dept(id) 时，dept(id) 必须满足什么条件？如果 dept 表没有主键、只有 UNIQUE(id) 呢？",
+      "back": "被引用列必须是候选键（主键或带 UNIQUE 约束的列组）的完整列；只有 UNIQUE 也可以，但列顺序与组合必须整体唯一。",
+      "explanation": "外键约束的值必须存在于被引用列中，数据库要用它做查找，所以被引用列必须有唯一索引。引用非唯一列会被拒绝（MySQL 报 errno 1822 一类错误）。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-002",
+      "kp_id": "db/ch1/projection",
+      "kp_name": "投影与去重",
+      "chapter": "db/ch1",
+      "front": "关系代数里 π_name(Student) 的结果会自动去重吗？SQL 的 SELECT name FROM Student 呢？",
+      "back": "关系代数会去重（关系是集合，不允许重复元组）；SQL 不会，除非显式写 SELECT DISTINCT。",
+      "explanation": "SQL 的表是多重集（bag）语义，投影保留重复行；关系代数是集合语义。问“关系代数与 SQL 的差别”通常就考这一点。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-003",
+      "kp_id": "db/ch1/natural-join",
+      "kp_name": "自然连接与等值连接",
+      "chapter": "db/ch1",
+      "front": "自然连接和等值连接的结果列有什么区别？",
+      "back": "自然连接按所有同名属性自动等值，结果中去掉重复的同名列；等值连接要显式写条件，两边的列都保留。",
+      "explanation": "自然连接依赖列名，列名一变语义就变；生产 SQL 更常用显式 JOIN ... ON，因为条件写在哪一目了然。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-004",
+      "kp_id": "db/ch1/null-logic",
+      "kp_name": "三值逻辑与 NULL",
+      "chapter": "db/ch1",
+      "front": "SELECT * FROM t WHERE a = NULL 会返回什么？NULL = NULL 的结果是什么？",
+      "back": "都拿不到行：NULL = NULL 求值为 UNKNOWN，WHERE 只保留 TRUE 的行。判断空值要用 IS NULL / IS NOT NULL。",
+      "explanation": "SQL 是三值逻辑（TRUE/FALSE/UNKNOWN），UNKNOWN 在 WHERE、CHECK 里都按“不满足”处理。这也是 NOT IN 遇到 NULL 会整体为空的根源。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-005",
+      "kp_id": "db/ch2/count-null",
+      "kp_name": "COUNT 与 NULL",
+      "chapter": "db/ch2",
+      "front": "COUNT(*) 和 COUNT(col) 在同一张表上结果一定相同吗？",
+      "back": "不一定。COUNT(*) 数行数；COUNT(col) 跳过 col 为 NULL 的行。COUNT(1) 与 COUNT(*) 等价。",
+      "explanation": "要数“非空值个数”只能用 COUNT(col)。做统计时把 COUNT(*) 和 COUNT(col) 混用是最常见的口径错误。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-006",
+      "kp_id": "db/ch2/where-having",
+      "kp_name": "WHERE 与 HAVING",
+      "chapter": "db/ch2",
+      "front": "WHERE 和 HAVING 的区别？哪个能用聚合函数？",
+      "back": "WHERE 在分组前过滤行，不能用聚合；HAVING 在分组后过滤组，可以用聚合，也可以引用分组列。",
+      "explanation": "逻辑执行顺序：FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT。把聚合条件写进 WHERE 会直接报错。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-007",
+      "kp_id": "db/ch2/left-join-where",
+      "kp_name": "LEFT JOIN 的条件位置",
+      "chapter": "db/ch2",
+      "front": "A LEFT JOIN B ON ... WHERE B.x = 1 和把条件写进 ON，结果一样吗？",
+      "back": "不一样。条件放 WHERE 会把 B 为 NULL 的行过滤掉，等价于 INNER JOIN；放 ON 才保留左表全部行。",
+      "explanation": "这是 LEFT JOIN 失效最常见的原因：想让左表全保留，右表条件必须放 ON。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-008",
+      "kp_id": "db/ch2/not-in-null",
+      "kp_name": "NOT IN 与 NULL",
+      "chapter": "db/ch2",
+      "front": "WHERE id NOT IN (SELECT dept_id FROM emp) 在 dept_id 含 NULL 时会怎样？",
+      "back": "结果为空（或丢掉本该返回的行），因为 x NOT IN (..., NULL) 会变成 UNKNOWN；改用 NOT EXISTS，或先过滤 NULL。",
+      "explanation": "NOT IN 展开成一系列 <> 比较，遇到 NULL 得 UNKNOWN；NOT EXISTS 只判断存在性，不受 NULL 影响。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-009",
+      "kp_id": "db/ch3/candidate-key",
+      "kp_name": "候选键的极小性",
+      "chapter": "db/ch3",
+      "front": "候选键定义里的“最小”指什么？",
+      "back": "指属性集极小：去掉任何一个属性都不能再唯一标识元组。不是属性个数最少，而是不存在真子集仍是键。",
+      "explanation": "判断候选键两步走：先验证唯一性，再逐个去掉属性验证极小性。超键不要求极小。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-010",
+      "kp_id": "db/ch3/3nf-bcnf",
+      "kp_name": "3NF 与 BCNF",
+      "chapter": "db/ch3",
+      "front": "BCNF 比 3NF 严格在哪里？举一个满足 3NF 但不满足 BCNF 的例子。",
+      "back": "BCNF 要求每个非平凡函数依赖的左侧都是超键；3NF 放宽为“左侧是超键，或右侧属性是主属性”。经典例子 STJ(s,t,j)：s,t→j 且 j→t，j 不是超键但 t 是主属性。",
+      "explanation": "3NF 允许主属性之间的依赖，BCNF 不允许。3NF 能保证保持函数依赖，BCNF 不一定。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-011",
+      "kp_id": "db/ch3/lossless-join",
+      "kp_name": "无损连接分解",
+      "chapter": "db/ch3",
+      "front": "把 R 分解成 R1、R2 两个关系，无损连接的判定条件是什么？",
+      "back": "R1 ∩ R2 → R1 或 R1 ∩ R2 → R2 成立，即交集是其中一个关系的超键。",
+      "explanation": "二分解用交集判据；多分解要用表格法（chase）。无损连接保证自然连接后不产生伪元组。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-012",
+      "kp_id": "db/ch3/dependency-preserving",
+      "kp_name": "保持函数依赖",
+      "chapter": "db/ch3",
+      "front": "BCNF 分解一定能保持函数依赖吗？",
+      "back": "不一定。3NF 分解可以同时做到无损连接和保持函数依赖；BCNF 只保证无损连接。",
+      "explanation": "所以工程上常停在 3NF：既能无损分解又能保持依赖，避免每次验证约束都要连接多表。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-013",
+      "kp_id": "db/ch4/bplus-range",
+      "kp_name": "B+ 树与范围查询",
+      "chapter": "db/ch4",
+      "front": "为什么 B+ 树比 B 树更适合数据库索引，尤其是范围查询？",
+      "back": "B+ 树所有数据都在叶子、叶子间有链表，范围扫描是顺序读；非叶节点只存键，扇出更大、树更矮。",
+      "explanation": "B 树数据分散在内部节点，范围查询要中序遍历、随机 IO 多。B+ 树把随机 IO 压到定位起点那一次。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-014",
+      "kp_id": "db/ch4/clustered-index",
+      "kp_name": "聚簇索引与回表",
+      "chapter": "db/ch4",
+      "front": "聚簇索引和二级索引查一行数据，IO 差别在哪？什么是回表？",
+      "back": "聚簇索引叶子就是数据行，一次定位拿到整行；二级索引叶子存主键值，要先查二级索引再按主键查聚簇索引，第二次查找叫回表。",
+      "explanation": "覆盖索引把查询需要的列都放进索引，可以避免回表，是最常见的优化手段之一。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-015",
+      "kp_id": "db/ch4/leftmost-prefix",
+      "kp_name": "最左前缀原则",
+      "chapter": "db/ch4",
+      "front": "联合索引 (a, b, c)，WHERE b = 1 AND c = 2 能用上索引吗？WHERE a = 1 AND c = 2 呢？",
+      "back": "第一个用不上（缺最左列 a）；第二个能用上 a 的部分，c 用不上（中间断了 b）。",
+      "explanation": "最左前缀要求从 a 开始连续使用；范围条件之后的列一般也不再走索引定位。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-016",
+      "kp_id": "db/ch4/index-invalid",
+      "kp_name": "索引失效的常见写法",
+      "chapter": "db/ch4",
+      "front": "列出三种会让索引失效的常见写法。",
+      "back": "对索引列做函数或运算（WHERE YEAR(created_at)=2024）、隐式类型转换（字符串列传数字）、前导模糊 LIKE '%x'；另外 OR 连接非索引列也会退化。",
+      "explanation": "本质是优化器用不上索引的有序性。改成范围条件（created_at >= '2024-01-01'）或建函数索引可解。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-017",
+      "kp_id": "db/ch5/selectivity",
+      "kp_name": "选择率与索引选择",
+      "chapter": "db/ch5",
+      "front": "选择率高的列（比如性别）适合建索引吗？为什么？",
+      "back": "通常不适合。选择率高意味着一次查询要返回大量行，走索引再回表的随机 IO 比全表顺序扫描更贵。",
+      "explanation": "索引适合定位“少量行”。判断依据是选择率与聚簇因子，不是“有没有索引”本身。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-018",
+      "kp_id": "db/ch5/join-algorithms",
+      "kp_name": "三种连接算法",
+      "chapter": "db/ch5",
+      "front": "NLJ、Hash Join、Sort-Merge Join 各适合什么场景？",
+      "back": "NLJ：外表小、内表连接列有索引；Hash Join：等值连接、大表、内存够；Sort-Merge：输入已有序，或需要范围/不等值连接。",
+      "explanation": "Hash Join 只能等值；Sort-Merge 对已排序输入几乎免费；NLJ 在索引存在时随机 IO 可控。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-019",
+      "kp_id": "db/ch5/explain",
+      "kp_name": "读懂 EXPLAIN",
+      "chapter": "db/ch5",
+      "front": "EXPLAIN 输出里 type=ALL、rows 很大、Extra 出现 Using filesort，分别说明什么？",
+      "back": "type=ALL 是全表扫描；rows 是优化器估算的扫描行数；Using filesort 表示无法用索引顺序满足 ORDER BY，需要额外排序。",
+      "explanation": "看执行计划先看访问类型、再看行数、最后看 Extra 里的临时表与排序提示。rows 是估算值，统计信息过期时会偏得很厉害。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-020",
+      "kp_id": "db/ch5/cost-estimate",
+      "kp_name": "代价估算为何失准",
+      "chapter": "db/ch5",
+      "front": "为什么优化器会选错索引？",
+      "back": "统计信息过期、数据倾斜、列间相关性被假设为独立、代价模型对随机 IO 的估算偏差。",
+      "explanation": "优化器基于采样统计与独立性假设估算代价。分布剧变后要 ANALYZE 表，必要时用 hint 或改写查询。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-021",
+      "kp_id": "db/ch6/isolation",
+      "kp_name": "隔离级别与异常现象",
+      "chapter": "db/ch6",
+      "front": "四种隔离级别分别允许哪些现象？InnoDB 的 RR 真的完全避免幻读吗？",
+      "back": "RU 允许脏读；RC 允许不可重复读与幻读；RR 允许幻读（标准定义）；Serializable 全部避免。InnoDB 的 RR 在快照读下用 MVCC 不出现幻读，但当前读（FOR UPDATE）仍依赖 next-key lock，要按语句类型区分。",
+      "explanation": "背“级别→现象”表时注意标准定义与具体实现的差别，InnoDB 的 RR 是典型例子。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-022",
+      "kp_id": "db/ch6/mvcc-readview",
+      "kp_name": "MVCC 与 read view 创建时机",
+      "chapter": "db/ch6",
+      "front": "InnoDB 的 read view 在 RC 和 RR 下分别什么时候创建？",
+      "back": "RC：每条 SELECT 语句创建一次；RR：事务里第一次快照读时创建，之后复用。",
+      "explanation": "read view 决定你能看到哪个版本。RR 复用同一个 view，所以同一事务重复读结果一致；RC 每条语句都重新看一眼已提交数据。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-023",
+      "kp_id": "db/ch6/2pl-deadlock",
+      "kp_name": "两阶段锁与死锁",
+      "chapter": "db/ch6",
+      "front": "两阶段锁协议的两个阶段是什么？它和死锁是什么关系？",
+      "back": "增长期只加锁不释放，收缩期只释放不加锁。2PL 保证可串行化，但不避免死锁；死锁靠超时或等待图检测后回滚一个事务。",
+      "explanation": "严格 2PL 要求锁持有到提交。死锁是 2PL 的固有代价，工程上用死锁检测加重试解决。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-024",
+      "kp_id": "db/ch6/lost-update",
+      "kp_name": "防止丢失更新",
+      "chapter": "db/ch6",
+      "front": "两个事务同时“读-改-写”同一行，怎么防止丢失更新？",
+      "back": "悲观：SELECT ... FOR UPDATE 加锁读；乐观：UPDATE ... SET v = v + 1 WHERE version = ? 并检查影响行数。",
+      "explanation": "先读后写且不在同一条语句里，就必须显式加锁或做版本校验；只靠 RC/RR 的快照读不解决写覆盖。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-025",
+      "kp_id": "db/ch7/wal",
+      "kp_name": "WAL 两条规则",
+      "chapter": "db/ch7",
+      "front": "WAL 的两条核心规则是什么？分别服务于哪个恢复操作？",
+      "back": "提交前日志必须先落盘（服务 redo）；数据页写盘前对应日志必须先落盘（服务 undo）。",
+      "explanation": "也就是“日志先行”。违反第一条会丢已提交事务，违反第二条会无法回滚未提交的修改。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-026",
+      "kp_id": "db/ch7/checkpoint",
+      "kp_name": "checkpoint 的作用",
+      "chapter": "db/ch7",
+      "front": "checkpoint 的作用是什么？它会把日志清空吗？",
+      "back": "把内存脏页刷盘并记录一个一致点，缩短崩溃恢复时要扫描和重放的日志范围；不会清空日志，日志按归档策略单独清理。",
+      "explanation": "checkpoint 越频繁恢复越快，但 IO 开销越大，是典型权衡。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-027",
+      "kp_id": "db/ch7/aries",
+      "kp_name": "ARIES 三阶段",
+      "chapter": "db/ch7",
+      "front": "ARIES 恢复的三个阶段分别做什么？为什么 redo 要“重复历史”？",
+      "back": "Analysis 确定脏页表与活动事务；Redo 从最早 LSN 重放所有已落盘日志（含将被回滚的事务）；Undo 回滚未提交事务。重复历史是为了让页面回到崩溃前状态，undo 才有确定的起点。",
+      "explanation": "redo 阶段不做逻辑判断、一律重放，是 ARIES 的关键设计；undo 用补偿日志（CLR）保证回滚本身也可重入。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    },
+    {
+      "id": "db-028",
+      "kp_id": "db/ch7/redo-undo",
+      "kp_name": "redo 与 undo 的分工",
+      "chapter": "db/ch7",
+      "front": "redo 和 undo 各自处理哪类事务？",
+      "back": "redo 重做“已提交但数据页还没落盘”的修改；undo 回滚“未提交”的修改。",
+      "explanation": "两个方向都要，因为崩溃时既有已提交未落盘的，也有未提交却已写页的。",
+      "cause_options": ["概念混淆", "计算失误", "没学过", "看错题"]
+    }
+  ]
+}

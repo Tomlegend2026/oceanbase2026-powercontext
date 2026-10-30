@@ -1,0 +1,22 @@
+# 运行时数据（数据库、审计日志、PID）
+.runtime/
+app/.runtime/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# 凭据：只提交 *.example
+.env
+deploy/*.env
+!deploy/*.env.example
+
+# 证据原始件（体积大，按需单独上传，不入库）
+evidence/raw/
+evidence/verify/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.uv/
