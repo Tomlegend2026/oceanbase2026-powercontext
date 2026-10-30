@@ -73,11 +73,19 @@ if (-not (Test-Path (Join-Path $appDir ".env"))) {
     return
 }
 
-$uv = Get-Command uv -ErrorAction Stop
 Write-Host "启动应用 ..." -ForegroundColor Cyan
-$appProc = Start-Process -FilePath $uv.Source `
-    -ArgumentList @("run", "uvicorn", "recallcoach.main:app", "--port", "$Port") `
-    -WorkingDirectory $appDir -PassThru -WindowStyle Minimized
+$venvPython = Join-Path $appDir ".venv\Scripts\python.exe"
+if (Test-Path $venvPython) {
+    # 直接跑 venv 里的 python：单个进程，stop.ps1 能停干净
+    $appProc = Start-Process -FilePath $venvPython `
+        -ArgumentList @("-m", "uvicorn", "recallcoach.main:app", "--port", "$Port") `
+        -WorkingDirectory $appDir -PassThru -WindowStyle Minimized
+} else {
+    $uv = Get-Command uv -ErrorAction Stop
+    $appProc = Start-Process -FilePath $uv.Source `
+        -ArgumentList @("run", "uvicorn", "recallcoach.main:app", "--port", "$Port") `
+        -WorkingDirectory $appDir -PassThru -WindowStyle Minimized
+}
 Set-Content -Path (Join-Path $pidDir "app.pid") -Value $appProc.Id -Encoding ASCII
 
 $appUrl = "http://127.0.0.1:$Port"
