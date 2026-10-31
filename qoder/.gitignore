@@ -23,3 +23,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 pytest-cache-files-*/
+
+# 提交材料打包产物（按需生成，不入库）
+evidence/*.zip
