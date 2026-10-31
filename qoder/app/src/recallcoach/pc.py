@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 
+from . import audit as auditlog
+
 REQUEST_ID_HEADER = "X-PowerContext-Request-ID"
 
 
