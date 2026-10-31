@@ -63,6 +63,40 @@ def test_daily_cap_blocks_writes():
     assert only(writes_today=20).reason == "daily-cap"
 
 
+def test_daily_cap_keeps_the_blocked_content():
+    """第 4 节第 4 条：进"待确认"而不是静默 skip，所以文本必须留在决策里。"""
+    decision = only(writes_today=20, lapses_7d=3)
+    assert decision.action == "skip"
+    assert decision.kind == "weakness"
+    assert decision.text.startswith("[kp:db/ch6/mvcc-readview]"), decision.text
+    assert decision.target_entry_id is None
+
+    existing = only(writes_today=20, lapses_7d=3, active={("weakness", CARD["kp_id"]): "e0001"})
+    assert existing.reason == "daily-cap"
+    assert existing.target_entry_id == "e0001", "被拦下的 revise 要能追认回同一条目"
+
+
+def test_daily_cap_does_not_claim_a_write_that_was_never_planned():
+    """没打算写的分支照实回传自己的原因，不冒充成"今日写满"。"""
+    assert only(writes_today=20, lapses_7d=1).reason == "lapses<2"
+    assert only(writes_today=20, correct=True).reason == "correct"
+
+    reasons = [item.reason for item in decide(writes_today=20, lapses_7d=1, cause="概念混淆：参见 https://example.com/x")]
+    assert reasons == ["lapses<2", "forbidden"]
+
+
+def test_daily_cap_blocks_both_branches_separately():
+    """两条都被拦下时不合并：待确认列表里各留一条自己的文本。"""
+    decisions = decide(
+        writes_today=20,
+        lapses_7d=3,
+        cause="概念混淆：把 read view 的创建时机与锁的持有范围混为一谈",
+    )
+    assert [item.reason for item in decisions] == ["daily-cap", "daily-cap"]
+    assert [item.kind for item in decisions] == ["weakness", "misconception"]
+    assert len({item.text for item in decisions}) == 2
+
+
 def test_personalization_off_never_produces_a_write():
     """off 是对照组：策略层不能产生任何 write/revise（memory-design.md 第 9 节）。"""
     decisions = decide(lapses_7d=5, cause="概念混淆：把 read view 和锁的范围搞混", personalization=False)
@@ -142,3 +176,21 @@ def test_session_end_writes_progress_then_revises():
     )
     assert len(second) == 1 and second[0].action == "revise"
     assert second[0].target_entry_id == "e0009"
+
+
+def test_session_end_over_cap_keeps_the_progress_text():
+    """会话结束也被单日上限挡住：留下待确认文本，但不给空会话编一个"被拦下"。"""
+    blocked = policy.decide_session_end(
+        chapter="db/ch6", total=10, correct=3, stuck=["MVCC"], next_card="db-022",
+        active_progress_entry=None, writes_today=policy.DAILY_WRITE_CAP,
+    )
+    assert [item.action for item in blocked] == ["skip"]
+    assert blocked[0].reason == "daily-cap"
+    assert blocked[0].kind == "progress"
+    assert "10 张里答对 3" in blocked[0].text
+
+    empty = policy.decide_session_end(
+        chapter="db/ch6", total=0, correct=0, stuck=[], next_card=None,
+        active_progress_entry=None, writes_today=policy.DAILY_WRITE_CAP,
+    )
+    assert empty[0].reason == "empty-session"

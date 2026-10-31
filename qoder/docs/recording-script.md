@@ -18,7 +18,7 @@
 | 2 | 另开窗口：`powercontext ready` / `capabilities` | 用鼠标划出 `auto, fts` 那一行 |
 | 3 | Qoder：`uv run python -m recallcoach.cli doctor` | 六项全绿 |
 | 4 | Qoder 会话里一次真实的 `remember` 调用 | 停在返回的 `entry_id` 上 |
-| 5 | `evidence/` 里的 `memory_audit.jsonl` 尾部 | 展示 `request_id` 字段 |
+| 5 | `evidence/` 里当天的 `memory_audit-YYYYMMDD.jsonl` 尾部 | 展示 `request_id` 字段 |
 
 一句话结论（字幕）：**记忆服务在本机跑通，每次调用都有请求 ID 可回溯。**
 
@@ -31,7 +31,7 @@
 | 3 | 第二次答错同一张卡 | toast「已记下：…」，露出 `entry_id` |
 | 4 | `entries/list` | 只多了 1 条，version=1 |
 | 5 | 第三次答错 | 停在同一 `entry_id`、version=2 |
-| 6 | `memory_audit.jsonl` 三条决策 | `skip` → `write` → `revise` |
+| 6 | 当天审计文件里三条决策 | `skip` → `write` → `revise` |
 
 一句话结论：**记忆按阈值写入，不重复堆积；每次决策都有留痕。**
 

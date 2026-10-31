@@ -16,9 +16,11 @@
 |---|---|---|---|
 | `weakness` | 知识点薄弱 | `[kp:db/ch6/mvcc-readview] MVCC read view 的创建时机反复出错；能说出"快照"但说不清 RC 与 RR 的差别。` | `[kp:<kp_id>]` |
 | `misconception` | 具体混淆 | `[kp:db/ch6/mvcc-readview] 把 read view 的创建时机与锁的持有范围混为一谈，第 3 次。` | `[kp:<kp_id>]` |
-| `preference` | 讲解偏好 | `[pref] 先给结论再给推导；单个概念不超过 3 句；例子优先用"两个并发事务"。` | `[pref]` |
+| `preference` | 讲解偏好 | `[pref] 先给结论再给推导；单个概念不超过 3 句；例子优先用"两个并发事务"。` | `[pref]` **（v2，本轮未实现）** |
 | `progress` | 进度叙事 | `[kp:db/ch2] 10/28 复习完 SQL 章；NOT IN 遇 NULL 还卡着，下次从 db-008 开始。` | `[kp:<章>]` |
-| `commitment` | 下次承诺 | `[next] 明天先过 db-008 与 db-022，再开范式章。` | `[next]` |
+| `commitment` | 下次承诺 | `[next] 明天先过 db-008 与 db-022，再开范式章。` | `[next]` **（v2，本轮未实现）** |
+
+**`preference` / `commitment` 本轮未实现**（记为 v2）：策略层、网关与打分都没有这两条分支，代码里不会写入、UI 里也没有入口。它们的触发入口——题目下方反复点"换个讲法"累计到 `PREFERENCE_STREAK_THRESHOLD` 才写 `preference`、小结页点"就这么定"写 `commitment`——需要先在 UI 上补两个明确的按钮与计数，留待后续实现；`PREFERENCE_STREAK_THRESHOLD` 常量保留在下面的清单里作为设计意图的记录，当前无代码引用。
 
 前缀是刻意设计：给人读，同时给 FTS 提供稳定的英文 token，保证"按知识点精确召回"和"按自然语言召回"都成立。`kp_id` 与 `app.db.kp.id` 完全一致。
 
@@ -39,11 +41,11 @@
     否则:                              → write weakness
 若 cause == "概念混淆" 且用户填了混淆对象:
     → write misconception（同 kp 已有则 revise）
-若用户连续 2 次点同向"换个讲法":
+若用户连续 2 次点同向"换个讲法":                     # v2：本轮未实现，UI 还没有"换个讲法"入口
     → write preference（已存在则 revise）
 会话结束:
     → write progress（同一天已有则 revise）
-用户点"就这么定":
+用户点"就这么定":                                     # v2：本轮未实现，小结页没有确认按钮
     → write commitment
 ```
 
@@ -66,9 +68,12 @@ MAX_TEXT_CHARS = 300        # 远低于 API 的 8192 字节上限
 ## 4. 去重与上限
 
 1. 每个 kp 最多 1 条 active `weakness` + 1 条 active `misconception`；再触发就 `revise`。
-2. `preference` 全局最多 5 条 active；满了先 `retire` 最旧的。
-3. `progress` 每天最多 1 条；`commitment` 每天最多 1 条。
-4. 单日写入超过 `DAILY_WRITE_CAP` 时进入"待确认"列表，不静默写。
+2. `preference` 全局最多 5 条 active；满了先 `retire` 最旧的。（v2，随 `preference` 一起未实现）
+3. `progress` 每天最多 1 条；`commitment` 每天最多 1 条。（`commitment` 属 v2，本轮未实现）
+4. 单日写入达到 `DAILY_WRITE_CAP` 时**不静默 skip**：策略层把本要执行的 `write`/`revise` 降级成 `skip + reason="daily-cap"`，但**保留 `kind` / `text` / `target_entry_id`**，于是
+   - `/api/answer`、`/api/session/end` 的 `memory[]` 对应项返回 `status="pending"`，响应顶层带 `pending_writes` 计数；
+   - 同时往当天的审计文件追加一行 `op="memory.pending"`（含 `would_be`、`kind`、`text`、`target_entry_id`、`writes_today`、`daily_cap`），"待确认"清单以审计日志为准，不再另建表；
+   - 只有"本来就要写"的分支才会被降级；本来就 `skip`（`lapses<2`、`correct`、`forbidden`、空会话）的决策回传各自的原因，不冒充成上限。
 5. 写入前用 `entries/list` 查同 kp 是否已有 active 条目——不要靠 `search` 判断存在性（search 是召回，不是去重）。
 
 ## 5. 禁写清单
@@ -112,7 +117,9 @@ mode  = "auto"
 
 ## 7. 审计格式
 
-`memory_audit.jsonl`，一行一次调用：
+配置里写的是**基名** `memory_audit.jsonl`；实际落盘按天滚动成 `memory_audit-YYYYMMDD.jsonl`（`RECALLCOACH_AUDIT` 只给基名与目录，日期由实现补上）。归哪一天看记录自己的 `ts`，写入与读取因此不会错位；`ts` 解析不出来时兜底到今天。`/api/health` 的 `audit_path` 回基名、`audit_file` 回今天正在写的那个文件，`doctor` 打印后者。
+
+一行一次调用：
 
 ```json
 {"ts":"2026-10-30T15:41:02+08:00","op":"memory.search","scope_id":"...","personalization":true,
@@ -121,12 +128,21 @@ mode  = "auto"
  "request_id":"...","latency_ms":37,"status":"ok"}
 ```
 
+除网关调用外还有一类"待确认"记录（第 4 节第 4 条），它没有 `request_id`：
+
+```json
+{"ts":"2026-10-30T21:02:11+08:00","op":"memory.pending","personalization":true,
+ "card_id":"db-022","kp_id":"db/ch6/mvcc-readview","kind":"weakness",
+ "text":"[kp:db/ch6/mvcc-readview] MVCC 与 read view 创建时机：2 次未通过，最近一次自评 2/5。",
+ "would_be":"write","target_entry_id":null,"writes_today":20,"daily_cap":20,"status":"pending"}
+```
+
 规则：
 
 - `request_id` 取响应头 `X-PowerContext-Request-ID`；取不到写 `null`。
 - 不记录 token；`request` 里出现敏感字段一律打码。
 - 失败也记一行，`status:"error"` + `error` 摘要，便于排查"为什么没生效"。
-- 文件按天滚动（`memory_audit-YYYYMMDD.jsonl`），Evidence 页只读当天与最近 7 天。
+- Evidence 页只读**最近 7 天**的滚动文件（`audit_window_days` 常量），从最旧那天起按时间正序拼接，再截到最后 `limit` 条；`audit_files` 回显真正读到的文件名。窗口锚点取系统当天，而不是 `RECALLCOACH_TODAY`——审计的 `ts` 本来就是系统时间，锚在同一处才对得上。
 
 ## 8. 生命周期
 
@@ -165,9 +181,12 @@ CREATE TABLE memory_refs (
 3. 同 kp 第三次答错 → `revise`，不是新增。
 4. 已有 active 时再次触发 → `revise`。
 5. 命中禁写清单 → `skip`。
-6. 单日超过 20 条 → 进待确认，不写。
+6. 单日达到 20 条 → 本要执行的 `write`/`revise` 降级成 `skip + reason="daily-cap"` 且保留 `kind`/`text`/`target_entry_id`；接口返回 `status="pending"` 与 `pending_writes`，同时审计里多一行 `op="memory.pending"`；本来就 skip 的分支不冒充成上限。
 7. `personalization=off` → 策略层不产生任何写操作。
 8. 错因选了"概念混淆"且写出对象 → 即使 `lapses=1` 也写 1 条 `misconception`（不受第 1 条门槛约束）。
 9. 同一次答错同时过两个分支 → 返回 `weakness` + `misconception` 两条决策；没填混淆对象时只有 `weakness`。
+10. 审计按天滚动：不同 `ts` 的记录落进不同 `memory_audit-YYYYMMDD.jsonl`，基名文件本身不写入。
+11. Evidence 读最近 7 天：第 8 天之前的文件不进列表，结果按天从旧到新，`limit` 截最后若干条。
 
 网关层用假 HTTP 服务（httpx MockTransport）断言：URL、请求体、`X-PowerContext-Request-ID` 解析、审计落盘各一条。
+端到端另起一个子进程跑 `tests/fake_pc_server.py`（随机端口，见 `app/tests/test_e2e_fake_pc.py`），断言冷启动无记忆加权、`skip→write→revise` 的 `entry_id` 连续、`/api/compare` 位次差异、以及重启后条目数不变。

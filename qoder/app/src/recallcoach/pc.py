@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -70,9 +69,7 @@ class MemoryGateway:
     # ---- 审计 ----
 
     def _audit(self, record: dict[str, Any]) -> None:
-        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.audit_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        auditlog.append(self.audit_path, record)
 
     def _log(
         self,

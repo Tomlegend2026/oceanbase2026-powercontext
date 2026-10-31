@@ -183,6 +183,7 @@ function memoryToast(result) {
   const memories = [].concat(result.memory || []);
   const lines = [];
   let failed = false;
+  let warned = false;
   memories.forEach((memory, index) => {
     const decision = memory.decision || decisions[index] || {};
     const kind = KINDS[decision.kind] || decision.kind || "记忆";
@@ -190,6 +191,9 @@ function memoryToast(result) {
       lines.push(`已记下${kind}：${memory.entry_id}（v${memory.version ?? 1}）`);
     } else if (memory.status === "revised") {
       lines.push(`已修订${kind}：${memory.entry_id} → v${memory.version ?? "?"}`);
+    } else if (memory.status === "pending") {
+      warned = true;
+      lines.push(`今日写入已达上限，这条${kind}进"待确认"（内容已记审计，没有静默丢弃）`);
     } else if (memory.status === "error") {
       failed = true;
       lines.push(`${kind}写入失败：${memory.error}`);
@@ -199,7 +203,7 @@ function memoryToast(result) {
     const decision = decisions[0] || {};
     lines.push(`本次不写记忆：${REASONS[decision.reason] || decision.reason || "跳过"}`);
   }
-  toast(lines.join("　·　"), failed ? "bad" : "ok");
+  toast(lines.join("　·　"), failed ? "bad" : warned ? "warn" : "ok");
 }
 
 async function submitAnswer(correct, confidence) {

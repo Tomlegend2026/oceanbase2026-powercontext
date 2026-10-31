@@ -38,7 +38,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         ("本地记忆指针", health["memory_refs"]),
         ("业务日期", health["date"]),
         ("数据库", health["db_path"]),
-        ("审计日志", health["audit_path"]),
+        ("审计日志", health["audit_file"]),
     ]
     width = max(len(name) for name, _ in rows)
     for name, value in rows:

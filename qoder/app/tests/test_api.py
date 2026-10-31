@@ -1,8 +1,21 @@
-from datetime import date, datetime
+import json
+from datetime import date, datetime, timedelta
 
+from recallcoach import audit as auditlog
 from recallcoach import db as dbmod
+from recallcoach import policy
 
 TODAY = date(2026, 11, 1)
+
+
+def fill_daily_cap(service):
+    """把当天写入数顶到上限：只塞本地指针表，不动假 Server 的条目。"""
+    now = datetime(2026, 11, 1, 9, 0, 0)
+    for index in range(policy.DAILY_WRITE_CAP):
+        entry_id = f"e-cap-{index:02d}"
+        dbmod.save_memory_ref(
+            service.conn, entry_id, {"entry_id": entry_id}, f"kp/cap-{index:02d}", "weakness", now
+        )
 
 
 def test_health_reports_cards_and_scope(client):
@@ -223,6 +236,98 @@ def test_session_end_reports_next_start(client):
     progress_text = summary["memory"][0]["decision"]["text"]
     assert f"下次从 {answered[1]} 开始" in progress_text
 
+
+
+def test_daily_cap_marks_the_answer_pending_and_audits_it(client, gateway, service, settings):
+    """第 4 节第 4 条：写满时不静默 skip —— 返回 pending 标记，并把内容落审计。"""
+    fill_daily_cap(service)
+
+    first = client.post("/api/answer", json={"card_id": "db-022", "correct": False, "confidence": 1}).json()
+    assert first["decision"][0]["reason"] == "lapses<2", "本来就不达阈值，不该推锅给上限"
+    assert first["pending_writes"] == 0
+
+    second = client.post("/api/answer", json={"card_id": "db-022", "correct": False, "confidence": 2}).json()
+    decision = second["decision"][0]
+    assert [decision["action"], decision["reason"], decision["kind"]] == ["skip", "daily-cap", "weakness"]
+    assert decision["text"].startswith("[kp:"), decision
+    assert second["memory"][0]["status"] == "pending"
+    assert second["memory"][0]["decision"]["text"] == decision["text"]
+    assert second["pending_writes"] == 1
+    assert gateway.store == {}, "被上限拦下时一条都不能写进 PowerContext"
+
+    audit_file = auditlog.day_path(settings.audit_path, datetime.now().date())
+    lines = [json.loads(raw) for raw in audit_file.read_text(encoding="utf-8").splitlines()]
+    pending = [line for line in lines if line["op"] == "memory.pending"]
+    assert len(pending) == 1, lines
+    assert pending[0]["kind"] == "weakness"
+    assert pending[0]["text"] == decision["text"]
+    assert pending[0]["would_be"] == "write"
+    assert pending[0]["card_id"] == "db-022"
+    assert pending[0]["daily_cap"] == policy.DAILY_WRITE_CAP
+    assert pending[0]["writes_today"] == policy.DAILY_WRITE_CAP
+
+
+def test_capped_revise_is_audited_as_revise(client, gateway, service, settings):
+    """待确认里要能看出"本来要改哪一条"，第二天才好补写。"""
+    fill_daily_cap(service)
+    card = dbmod.card_by_id(service.conn, "db-022")
+    dbmod.save_memory_ref(
+        service.conn,
+        "e-target",
+        {"entry_id": "e-target"},
+        card["kp_id"],
+        "weakness",
+        datetime(2026, 11, 1, 9, 0, 0),
+    )
+
+    client.post("/api/answer", json={"card_id": "db-022", "correct": False, "confidence": 1})
+    second = client.post("/api/answer", json={"card_id": "db-022", "correct": False, "confidence": 2}).json()
+    assert second["decision"][0]["target_entry_id"] == "e-target", second
+    assert second["memory"][0]["status"] == "pending"
+    assert gateway.store == {}
+
+    audit_file = auditlog.day_path(settings.audit_path, datetime.now().date())
+    pending = [
+        json.loads(raw)
+        for raw in audit_file.read_text(encoding="utf-8").splitlines()
+        if json.loads(raw)["op"] == "memory.pending"
+    ]
+    assert [(line["would_be"], line["target_entry_id"]) for line in pending] == [("revise", "e-target")]
+
+
+def test_session_end_over_cap_is_pending_not_silently_skipped(client, gateway, service):
+    """会话结束的进度叙事走同一条路：不能因为 skip 就绕开"待确认"。"""
+    fill_daily_cap(service)
+    session_id = client.get("/api/today").json()["session_id"]
+    client.post(
+        "/api/answer", json={"card_id": "db-022", "correct": False, "confidence": 1, "session_id": session_id}
+    )
+
+    summary = client.post("/api/session/end", json={"session_id": session_id}).json()
+    assert summary["decision"][0]["reason"] == "daily-cap"
+    assert summary["decision"][0]["kind"] == "progress"
+    assert summary["memory"][0]["status"] == "pending"
+    assert summary["pending_writes"] == 1
+    assert summary["progress_entry_id"] is None
+    assert gateway.store == {}
+
+
+def test_evidence_reads_the_recent_seven_audit_days(client, settings):
+    """第 7 节：证据页读最近 7 天的滚动文件，更早的天不进列表。"""
+    today = date.today()
+    for offset in range(9):
+        auditlog.append(
+            settings.audit_path,
+            {"ts": f"{today - timedelta(days=offset)}T09:00:00+08:00", "op": f"memory.search.{offset}", "status": "ok"},
+        )
+
+    payload = client.get("/api/evidence?limit=50").json()
+    assert payload["audit_window_days"] == auditlog.WINDOW_DAYS
+    expected = [f"audit-{today - timedelta(days=o):%Y%m%d}.jsonl" for o in range(auditlog.WINDOW_DAYS - 1, -1, -1)]
+    assert payload["audit_files"] == expected, payload["audit_files"]
+    assert [row["op"] for row in payload["audit"]] == [f"memory.search.{o}" for o in range(6, -1, -1)]
+    assert payload["count"] == auditlog.WINDOW_DAYS
+    assert "最近 7 天共 7 个滚动文件" in payload["report_markdown"]
 
 
 def test_evidence_report_mentions_memory(client):

@@ -117,6 +117,30 @@ def _collapse(decisions: list[Decision]) -> list[Decision]:
     return unique
 
 
+def _apply_daily_cap(decisions: list[Decision], writes_today: int) -> list[Decision]:
+    """第 4 节第 4 条：超过单日上限时不静默丢弃，把"本来要写什么"留在决策里。
+
+    被拦下的 write/revise 降级为 skip + reason="daily-cap"，但保留 kind/text/target_entry_id，
+    调用方据此写"待确认"审计并给前端标记；没打算写的分支不受上限影响，照原样回传真实原因。
+    """
+    if writes_today < DAILY_WRITE_CAP:
+        return decisions
+
+    blocked = [item for item in decisions if item.action in {"write", "revise"}]
+    if not blocked:
+        return decisions
+    return [
+        Decision(
+            "skip",
+            "daily-cap",
+            kind=item.kind,
+            text=item.text,
+            target_entry_id=item.target_entry_id,
+        )
+        for item in blocked
+    ]
+
+
 def decide_answer(
     *,
     card: Mapping[str, Any],
@@ -135,8 +159,6 @@ def decide_answer(
     """
     if not personalization:
         return [Decision("skip", "personalization-off")]
-    if writes_today >= DAILY_WRITE_CAP:
-        return [Decision("skip", "daily-cap")]
     if correct:
         return [Decision("skip", "correct")]
 
@@ -150,7 +172,7 @@ def decide_answer(
         ),
         _misconception_branch(kp=kp, kp_name=kp_name, cause=cause, lapses_7d=lapses_7d, active=active),
     ]
-    return _collapse([branch for branch in branches if branch is not None])
+    return _apply_daily_cap(_collapse([branch for branch in branches if branch is not None]), writes_today)
 
 
 def decide_session_end(
@@ -167,8 +189,6 @@ def decide_session_end(
     """会话结束写一条进度叙事；当天已有则修订。"""
     if not personalization:
         return [Decision("skip", "personalization-off")]
-    if writes_today >= DAILY_WRITE_CAP:
-        return [Decision("skip", "daily-cap")]
     if total == 0:
         return [Decision("skip", "empty-session")]
 
@@ -178,6 +198,9 @@ def decide_session_end(
 
     if is_forbidden(text):
         return [Decision("skip", "forbidden")]
-    if active_progress_entry:
-        return [Decision("revise", "same-day", kind="progress", text=text, target_entry_id=active_progress_entry)]
-    return [Decision("write", "session-end", kind="progress", text=text)]
+    intended = (
+        Decision("revise", "same-day", kind="progress", text=text, target_entry_id=active_progress_entry)
+        if active_progress_entry
+        else Decision("write", "session-end", kind="progress", text=text)
+    )
+    return _apply_daily_cap([intended], writes_today)

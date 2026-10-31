@@ -96,7 +96,7 @@ explorer .\evidence\verify     # 证据目录
 
 - 新建独立 scope、独立 `app.db`、独立端口，**不碰日常复习数据**；
 - 结束后自动停掉隔离实例，`-KeepRunning` 可保留现场；
-- 结束时打印"预期 vs 实际"表，并把 `summary.md`、每一步原始 JSON、`memory_audit.jsonl` 写进 `evidence/verify/<时间戳>/`，可直接作为提交材料里的验证样例附件；
+- 结束时打印"预期 vs 实际"表，并把 `summary.md`、每一步原始 JSON、当天的 `memory_audit-YYYYMMDD.jsonl` 写进 `evidence/verify/<时间戳>/`，可直接作为提交材料里的验证样例附件；
 - V7 只验 Dashboard 入口可达，登录后核对同一条 `entry_id` 需要人工截图。
 
 在本机用假 PowerContext（`app/tests/fake_pc_server.py`）跑过一次的结果：PASS 8 / WARN 1（V7）/ FAIL 0。接真实 Server 后需复跑，预期一致。

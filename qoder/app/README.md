@@ -40,7 +40,7 @@ uv run python tests/fake_pc_server.py --port 8099
 $env:POWERCONTEXT_BASE_URL="http://127.0.0.1:8099"
 $env:POWERCONTEXT_TOKEN="fake-token"
 $env:RECALLCOACH_DB=".runtime/e2e/app.db"
-$env:RECALLCOACH_AUDIT=".runtime/e2e/audit.jsonl"
+$env:RECALLCOACH_AUDIT=".runtime/e2e/audit.jsonl"   # 基名；实际按天滚动成 audit-YYYYMMDD.jsonl
 $env:RECALLCOACH_TODAY="2026-11-01"
 uv run uvicorn recallcoach.main:app --port 8080
 ```

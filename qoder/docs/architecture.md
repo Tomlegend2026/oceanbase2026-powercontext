@@ -127,17 +127,18 @@ CREATE TABLE memory_refs (
 | 方法 | 路径 | 请求 | 响应要点 |
 |---|---|---|---|
 | GET | `/api/today` | `?personalization=on\|off` | `items[{card 字段…, score, breakdown{due,weakness,misconception,progress,fatigue}, memory_hits[{entry_id,kind}], practiced_today}]`, `mode`, `degraded`, `coach_note`, `date`, `session_id` |
-| POST | `/api/answer` | `{card_id, correct, confidence, cause?, latency_ms, session_id?}` | `schedule`, `personalization`, `decision[]` 与 `memory[]` 同序：前者每项 `{action:write\|revise\|skip, kind, text, reason, target_entry_id}`，后者每项 `{status:skipped\|written\|revised\|error, entry_id?, version?, kind?, text?, decision?}` |
-| POST | `/api/session/end` | `{session_id}` | `total`, `correct`, `stuck[]`, `next_start`, `progress_entry_id`, `decision[]`, `memory[]` |
+| POST | `/api/answer` | `{card_id, correct, confidence, cause?, latency_ms, session_id?}` | `schedule`, `personalization`, `pending_writes`, `decision[]` 与 `memory[]` 同序：前者每项 `{action:write\|revise\|skip, kind, text, reason, target_entry_id}`，后者每项 `{status:skipped\|pending\|written\|revised\|error, entry_id?, version?, kind?, text?, decision?}` |
+| POST | `/api/session/end` | `{session_id}` | `total`, `correct`, `stuck[]`, `next_start`, `progress_entry_id`, `pending_writes`, `decision[]`, `memory[]` |
 | GET | `/api/replay` | `?kind=` | `entries[{entry_id, kind, text, version, state, kp_id, hit_cards[]}]`, `note` |
 | POST | `/api/memory/{entry_id}/revise` | `{text}` | `ok`, `version`, `entry_id`, `items[]`（重排后的今日队列）, `moved[{card_id, before, after}]` |
 | POST | `/api/memory/{entry_id}/retire` | `{reason?}` | `ok`, `state:"retired"`, `entry_id`, `items[]`, `moved[]` |
 | GET | `/api/compare` | `?limit=5` | `on[]`, `off[]`, `diff[]`, `mode`, `degraded` |
-| GET | `/api/evidence` | `?limit=50` | 审计条目 + `report_markdown` |
-| GET | `/api/health` | — | `pc_ready`, `capabilities`, `scope_id`, `cards`, `memory_refs`, `audit_path`, `db_path`, `date`, `personalization` |
+| GET | `/api/evidence` | `?limit=50` | `audit[]`, `audit_files[]`, `audit_window_days`, `count`, `report_markdown` |
+| GET | `/api/health` | — | `pc_ready`, `capabilities`, `memory_search_modes`, `scope_id`, `cards`, `memory_refs`, `audit_path`, `audit_file`, `db_path`, `date`, `personalization` |
 
 `decision` 用数组而不是单个对象：薄弱点与混淆是两条独立分支（见 [memory-design.md](memory-design.md) 第 3 节），一次答错可能同时产出两条决策，`memory[]` 与之一一对应。
 `/api/today` 的 `personalization=off` 会开启 `mode="ab_off"` 的会话，`/api/answer` 与 `/api/session/end` 依据该会话的 mode 决定要不要碰记忆。
+`memory[].status="pending"` 表示这条写入被单日上限拦下（`decision[].reason="daily-cap"`，`text` 就是没写出去的内容）：同一时刻审计里多一行 `op="memory.pending"`，`pending_writes` 是这次响应里被拦下的条数。`/api/evidence` 只读最近 7 天的滚动审计文件（memory-design.md 第 7 节）。
 
 错误约定：PowerContext 不可用时，`/api/today` 返回 `degraded:true` 与 `mode:"offline"`，队列退化为纯到期排序，页面顶部显示"记忆离线"横幅——**不伪造记忆**。
 
@@ -158,7 +159,7 @@ score    = base + weak + miscon + progress + fatigue
 
 ## 8. 证据埋点
 
-1. `memory_audit.jsonl`：一行一次调用，字段见 [memory-design.md](memory-design.md) 第 7 节。
+1. 审计日志按天滚动成 `memory_audit-YYYYMMDD.jsonl`：一行一次调用，字段见 [memory-design.md](memory-design.md) 第 7 节；被单日上限拦下的写入也在这里留痕（`op:"memory.pending"`）。
 2. 页面上的记忆条目显示 `entry_id`、version、时间、命中卡片。
 3. `/api/evidence` 导出 `verification-report.md`：环境快照、`capabilities`、记忆清单、A/B 差异、20 条问答记录。
 4. `/api/compare` 常驻，随时可复现"记忆改变了排序"。

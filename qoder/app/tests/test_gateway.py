@@ -1,8 +1,10 @@
 import json
+from datetime import datetime
 
 import httpx
 import pytest
 
+from recallcoach.audit import day_path
 from recallcoach.pc import MemoryGateway, PowerContextError
 
 
@@ -37,11 +39,14 @@ def test_remember_parses_entry_and_writes_audit(workdir):
     assert seen["body"]["scope_id"] == "scope-1"
     assert result["entry_id"] == "e1"
 
-    line = json.loads((workdir / "audit.jsonl").read_text(encoding="utf-8").strip())
+    line = json.loads((workdir / f"audit-{datetime.now():%Y%m%d}.jsonl").read_text(encoding="utf-8").strip())
     assert line["request_id"] == "rid-1"
     assert line["op"] == "memory.remember"
     assert line["status"] == "ok"
     assert "secret-token" not in json.dumps(line, ensure_ascii=False)
+    # 第 7 节：审计按天滚动，基名本身不该被写入
+    assert not (workdir / "audit.jsonl").exists()
+    assert day_path(workdir / "audit.jsonl", datetime.now().date()).name == f"audit-{datetime.now():%Y%m%d}.jsonl"
 
 
 def test_search_returns_mode_and_hits(workdir):

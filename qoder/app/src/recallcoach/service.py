@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from typing import Any, Protocol
 
+from . import audit as auditlog
 from . import db as dbmod
 from . import policy, scheduler, scoring
 from .config import APP_DIR, Settings, load_settings
@@ -276,19 +275,26 @@ class Service:
             personalization=enabled,
         )
 
+        memory = self._execute(decisions, card)
         return {
             "card_id": card_id,
             "session_id": session_id,
             "schedule": new_state,
             "personalization": enabled,
             "decision": [decision.as_dict() for decision in decisions],
-            "memory": self._execute(decisions, card),
+            "memory": memory,
+            "pending_writes": sum(1 for item in memory if item["status"] == "pending"),
         }
 
     def _execute(self, decisions: list[policy.Decision], card: dict[str, Any]) -> list[dict[str, Any]]:
         """逐条执行决策，返回与 decision 列表同序的结果；不在线时保持 skipped，不伪造写入。"""
         results: list[dict[str, Any]] = []
         for decision in decisions:
+            if decision.reason == "daily-cap":
+                # 单日写满：内容不丢，落一行"待确认"审计，前端拿到 pending 标记
+                self._log_pending(decision, card)
+                results.append({"status": "pending", "decision": decision.as_dict()})
+                continue
             if decision.action not in {"write", "revise"} or not self.memory_ready():
                 results.append({"status": "skipped", "decision": decision.as_dict()})
                 continue
@@ -297,6 +303,28 @@ class Service:
             except PowerContextError as exc:
                 results.append({"status": "error", "error": str(exc), "decision": decision.as_dict()})
         return results
+
+    def _log_pending(self, decision: policy.Decision, card: dict[str, Any]) -> None:
+        """把被单日上限拦下的写入记成"待确认"，第二天可据此决定要不要补写。"""
+        # 上限只把 write/revise 降级成 skip，所以按 target_entry_id 反推本来要做的事
+        would_be = "revise" if decision.target_entry_id else "write"
+        auditlog.append(
+            self.settings.audit_path,
+            {
+                "ts": _now().astimezone().isoformat(timespec="seconds"),
+                "op": "memory.pending",
+                "personalization": True,
+                "card_id": card.get("id"),
+                "kp_id": card.get("kp_id"),
+                "kind": decision.kind,
+                "text": decision.text,
+                "would_be": would_be,
+                "target_entry_id": decision.target_entry_id,
+                "writes_today": self._writes_today(),
+                "daily_cap": policy.DAILY_WRITE_CAP,
+                "status": "pending",
+            },
+        )
 
     def _apply_decision(self, decision: policy.Decision, card: dict[str, Any]) -> dict[str, Any]:
         scope = self.scope()
@@ -388,12 +416,9 @@ class Service:
             personalization=enabled,
         )
 
-        memory: list[dict[str, Any]] = []
-        if any(item.action in {"write", "revise"} for item in decisions):
-            card = {"kp_id": chapter or "db", "kp_name": chapter or "会话"}
-            memory = self._execute(decisions, card)
-        else:
-            memory = [{"status": "skipped", "decision": item.as_dict()} for item in decisions]
+        # 会话结束没有真实卡片，用章节拼一个伪卡片供"待确认"审计定位
+        card = {"kp_id": chapter or "db", "kp_name": chapter or "会话"}
+        memory = self._execute(decisions, card)
 
         dbmod.close_session(self.conn, session_id, _now())
         return {
@@ -402,6 +427,7 @@ class Service:
             "correct": correct,
             "stuck": stuck,
             "personalization": enabled,
+            "pending_writes": sum(1 for item in memory if item["status"] == "pending"),
             # 次日起点与进度条目：小结页与"上次停在 db-008"都靠这两个字段
             "next_start": next_start,
             "progress_entry_id": next(
@@ -521,14 +547,8 @@ class Service:
         }
 
     def evidence(self, limit: int = 50) -> dict[str, Any]:
-        audit_path: Path = self.settings.audit_path
-        lines: list[dict[str, Any]] = []
-        if audit_path.exists():
-            for raw in audit_path.read_text(encoding="utf-8").splitlines()[-limit:]:
-                try:
-                    lines.append(json.loads(raw))
-                except ValueError:
-                    continue
+        # 审计按天滚动，证据页读最近 7 天的文件（memory-design.md 第 7 节）
+        lines, files = auditlog.read_window(self.settings.audit_path, limit=limit)
         replay = self.replay()
         entries = replay["entries"]
         compare = self.compare(limit=5)
@@ -542,6 +562,8 @@ class Service:
             f"- PowerContext：{self.settings.base_url}",
             f"- scope：`{self.scope() or '未建立（离线）'}`",
             f"- 卡片数：{dbmod.count_cards(self.conn)}；本地记忆指针：{len(dbmod.memory_refs(self.conn))}",
+            f"- 审计日志：最近 {auditlog.WINDOW_DAYS} 天共 {len(files)} 个滚动文件"
+            + (f"（{'、'.join(path.name for path in files)}）" if files else ""),
             "",
             "## 记忆条目",
             "",
@@ -565,7 +587,13 @@ class Service:
             report.append("")
             report.append("> 本次没有位次差异：当前记忆还没有命中今日队列里的卡片。")
 
-        return {"audit": lines, "report_markdown": "\n".join(report), "count": len(lines)}
+        return {
+            "audit": lines,
+            "audit_files": [path.name for path in files],
+            "audit_window_days": auditlog.WINDOW_DAYS,
+            "report_markdown": "\n".join(report),
+            "count": len(lines),
+        }
 
     # ---------- 健康 ----------
 
@@ -588,6 +616,7 @@ class Service:
             "cards": dbmod.count_cards(self.conn),
             "memory_refs": len(dbmod.memory_refs(self.conn)),
             "audit_path": str(self.settings.audit_path),
+            "audit_file": str(auditlog.day_path(self.settings.audit_path, _now().astimezone().date())),
             "db_path": str(self.settings.db_path),
             "date": self.today.isoformat(),
             "personalization": self.settings.personalization,

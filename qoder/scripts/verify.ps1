@@ -295,7 +295,7 @@ foreach ($row in $script:results) {
     $md.Add("| $($row.Step) | $($row.Verdict) | $($row.Expected) | $($row.Actual) |")
 }
 $md.Add("")
-$md.Add("原始请求/响应见同目录 ``v*.json``；审计日志 ``memory_audit.jsonl`` 中每条都带 request_id。")
+$md.Add("原始请求/响应见同目录 ``v*.json``；审计日志按天滚动为 ``memory_audit-YYYYMMDD.jsonl``（``RECALLCOACH_AUDIT`` 给的是基名），每条都带 request_id。")
 $summaryPath = Join-Path $outDir "summary.md"
 $md -join "`r`n" | Set-Content -Path $summaryPath -Encoding UTF8
 
