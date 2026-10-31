@@ -24,5 +24,10 @@ packages = ["src/recallcoach"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Starlette 1.x 的 TestClient 更希望底层用 httpx2；我们仍用 httpx。
+# 只屏蔽这一条已知的三方弃用提示，其它 warning 继续暴露。
+filterwarnings = [
+  "ignore:Using .httpx. with .starlette.testclient. is deprecated:UserWarning",
+]
 pythonpath = ["src"]
 addopts = "-q"
