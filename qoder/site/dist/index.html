@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RecallCoach · 数据库系统复习教练</title>
+  <meta name="description" content="用 PowerContext 记住薄弱点的数据库系统复习教练：记忆读写可核对，A/B 对照可复现。">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <p class="tagline">OceanBase 2026 大赛 · Qoder 赛道</p>
+    <h1>复习数据库系统，你缺的不是题库，<br>是"记得你错在哪"的那一层。</h1>
+    <p class="lede">
+      RecallCoach 把薄弱点、具体混淆和讲解偏好写进 PowerContext，每次出题前再读回来，
+      决定今天先练什么。零模型依赖，本地可跑，每条记忆都能被改写和撤回。
+    </p>
+    <div class="stats">
+      <div><strong>28</strong><span>张卡 / 7 章</span></div>
+      <div><strong>66</strong><span>个测试（含 4 条 HTTP 端到端）</span></div>
+      <div><strong>8</strong><span>项端到端验证通过</span></div>
+      <div><strong>0</strong><span>个外部 API Key</span></div>
+    </div>
+    <p class="cta">
+      <a class="button" href="#how">看它怎么工作</a>
+      <a class="button ghost" href="#run">本地跑起来</a>
+    </p>
+  </header>
+
+  <main>
+    <section id="problem">
+      <h2>真实痛点</h2>
+      <div class="grid three">
+        <article class="card">
+          <h3>读懂了，一周后全糊</h3>
+          <p>范式判断、EXPLAIN 读法、隔离级别现象，看书时都懂；隔一周再问，只剩下"好像有个 read view"。</p>
+        </article>
+        <article class="card">
+          <h3>错题散在四个地方</h3>
+          <p>纸面、截图、聊天记录、脑子里。复习时只能重读教材，说不清到底是哪三个知识点没掌握。</p>
+        </article>
+        <article class="card">
+          <h3>刷题 App 不认识你</h3>
+          <p>它按算法排题，不知道你已经在 MVCC 的 read view 上翻车第三次，也不知道你更吃"先公式后例子"。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="how">
+      <h2>它怎么工作</h2>
+      <div class="flow" role="img" aria-label="架构：浏览器、应用、本地数据库与 PowerContext">
+        <div class="node">
+          <span class="node-title">浏览器</span>
+          <span class="node-sub">127.0.0.1:8080</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node">
+          <span class="node-title">RecallCoach 应用</span>
+          <span class="node-sub">FastAPI · 调度 · 打分 · 策略</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node split">
+          <div>
+            <span class="node-title">app.db</span>
+            <span class="node-sub">事实与调度</span>
+          </div>
+          <div class="accent">
+            <span class="node-title">PowerContext</span>
+            <span class="node-sub">判断与叙事</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="caption">两个数据面刻意分开：流水进 SQLite，判断进记忆层。</p>
+
+      <ol class="steps">
+        <li><strong>出题前读记忆</strong>　取全量记忆条目按知识点对齐，再用检索补充语义命中；两者合并成命中集合。</li>
+        <li><strong>按分数排序</strong>　到期分 + 薄弱点 + 混淆 + 进度，逐项显示在卡片上，并标出命中的 entry_id。</li>
+        <li><strong>作答后按阈值写</strong>　同一知识点首次失败只记录流水；第二次才写入一条薄弱点；第三次是修订，不是新增。</li>
+        <li><strong>人可以改记忆</strong>　改一句措辞或点"已掌握"，队列立刻重排——这条闭环才是"越用越懂你"。</li>
+      </ol>
+    </section>
+
+    <section id="features">
+      <h2>核心功能</h2>
+      <div class="grid three">
+        <article class="card"><h3>今日队列</h3><p>SM-2 到期分与记忆加权合并排序，答错的卡当天仍在队列里，方便立刻再练。</p></article>
+        <article class="card"><h3>分数拆解</h3><p>每张卡显示到期 / 薄弱 / 混淆 / 进度 / 疲劳各贡献多少，记忆命中带 entry_id。</p></article>
+        <article class="card"><h3>教练备忘</h3><p>讲解区上方是由 <code>context/prepare</code> 生成、带引用的历史备忘，不是通用鸡汤。</p></article>
+        <article class="card"><h3>我记得你</h3><p>记忆时间线，支持改写（revise）与标记已掌握（retire），版本号递增可追溯。</p></article>
+        <article class="card"><h3>A/B 对照</h3><p>关掉个性化就是纯到期排序；两列并排，位次差异就是记忆的作用。</p></article>
+        <article class="card"><h3>证据导出</h3><p>每次调用都记 request_id、耗时与命中；一键导出 Markdown 报告。</p></article>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <h2>记忆不是装饰</h2>
+      <p class="lede">同一批到期卡片，只切换"读不读记忆"。下面是接真实 PowerContext 1.2.0 运行时的输出：</p>
+
+      <div class="grid two">
+        <article class="panel">
+          <h3>写入序列：跳过 → 写入 → 修订</h3>
+          <pre><code>第 1 次答错  skip/lapses&lt;2      未写入
+第 2 次答错  write/threshold-met mem_ent_… v1
+第 3 次答错  revise/dedupe       mem_ent_… v2</code></pre>
+          <p class="caption">同一知识点只留一条有效条目；第三次是修订，不会堆成三条。</p>
+        </article>
+        <article class="panel">
+          <h3>排序差异：个性化 vs 基线</h3>
+          <table>
+            <thead><tr><th>卡片</th><th>读记忆</th><th>不读记忆</th></tr></thead>
+            <tbody>
+              <tr><td>db-022 MVCC read view</td><td class="win">#1</td><td>未进前五</td></tr>
+              <tr><td>db-021 隔离级别与异常现象</td><td>#2</td><td>未进前五</td></tr>
+              <tr><td>db-023 两阶段锁与死锁</td><td>#3</td><td>未进前五</td></tr>
+              <tr><td>db-024 防止丢失更新</td><td>#4</td><td>未进前五</td></tr>
+              <tr><td>db-002 投影与去重</td><td>#5</td><td>#1</td></tr>
+            </tbody>
+          </table>
+          <p class="caption">db-022 的分数从 0.1 变成 1.0（当天已练过，含疲劳扣分），来源是一条真实写入的混淆记忆。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="tech">
+      <h2>指定技术怎么用</h2>
+      <table class="wide">
+        <thead><tr><th>接口</th><th>在项目里的作用</th><th>可核对的东西</th></tr></thead>
+        <tbody>
+          <tr><td><code>/v1/memory/remember</code></td><td>写入薄弱点、混淆、讲解偏好、进度叙事</td><td>返回的 entry_id 与 version；页面上直接显示</td></tr>
+          <tr><td><code>/v1/memory/entries/list</code></td><td>出题前取全量记忆，按知识点对齐</td><td>Replay 页的条目清单与命中卡片</td></tr>
+          <tr><td><code>/v1/memory/search</code></td><td>用当前队列的章节与知识点做语义补充</td><td>响应里的 <code>mode</code> 与命中数，进审计日志</td></tr>
+          <tr><td><code>/v1/context/prepare</code></td><td>生成"教练备忘"，插在讲解上方</td><td>返回的 <code>status</code> 与 <code>content</code></td></tr>
+          <tr><td><code>/v1/memory/entries/revise</code> · <code>/retire</code></td><td>人工改写或撤回记忆，立即影响排序</td><td>version 递增、state 变为 retired</td></tr>
+        </tbody>
+      </table>
+      <p class="caption">每次调用都写审计日志，含 <code>X-PowerContext-Request-ID</code>，可与 Server 日志逐条对上。</p>
+    </section>
+
+    <section id="verify">
+      <h2>验证</h2>
+      <p class="lede">一条命令建独立 scope、起一个隔离实例、跑完下面七项，并把原始请求/响应写进证据目录。</p>
+      <pre class="command"><code>.\scripts\verify.ps1</code></pre>
+      <table class="wide">
+        <thead><tr><th>样例</th><th>验证什么</th><th>实测</th></tr></thead>
+        <tbody>
+          <tr><td>V1 冷启动</td><td>没有记忆时不假装有</td><td>mode=on，10 张卡，weakness 全 0</td></tr>
+          <tr><td>V2 写入闭环</td><td>阈值、去重、修订</td><td>skip → write(v1) → revise(v2)</td></tr>
+          <tr><td>V3 排序改变</td><td>记忆确实改变出题顺序</td><td>db-022 从榜外到 #1，diff 5 条</td></tr>
+          <tr><td>V4 修订与退休</td><td>人改记忆，队列立刻变</td><td>退休后 diff 归零</td></tr>
+          <tr><td>V5 上下文注入</td><td>教练备忘来自记忆</td><td>content 735 字符，卡片标注 entry_id</td></tr>
+          <tr><td>V6 重启后仍在</td><td>记忆不是内存态</td><td>重启前后条目数一致</td></tr>
+          <tr><td>V7 Dashboard</td><td>第三方视角能看到同一批条目</td><td>需人工登录核对</td></tr>
+        </tbody>
+      </table>
+      <p class="caption">V1–V6 自动断言，V7 只验入口可达——人工核对那一张截图才是证据。</p>
+    </section>
+
+    <section id="gallery">
+      <h2>界面</h2>
+      <div class="grid three">
+        <figure class="shot">
+          <img src="assets/today.png" alt="今日队列：教练备忘、卡片分数拆解与命中的 entry_id">
+          <figcaption>今日队列：上方是记忆生成的教练备忘，每张卡显示分数拆解与命中条目</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/replay.png" alt="我记得你：记忆时间线与改写入口">
+          <figcaption>我记得你：条目、版本、命中的卡片，可改写或标记已掌握</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/compare.png" alt="对照：个性化与基线的位次差异">
+          <figcaption>对照：同一批卡片，读记忆与不读记忆的位次差异</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/evidence.png" alt="证据：每次调用的 request_id 与耗时">
+          <figcaption>证据：每次 PowerContext 调用都可追溯，可导出 Markdown</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="run">
+      <h2>本地跑起来</h2>
+      <pre class="command"><code>uv tool install --force "powercontext[cli,server]==1.2.0"
+cd qoder
+.\scripts\bootstrap.ps1      # 生成受保护的环境文件与随机 token
+.\scripts\start.ps1          # 起 Server → 等就绪 → 起应用
+# 打开 http://127.0.0.1:8080</code></pre>
+      <p class="caption">
+        完整步骤、macOS/Linux 差异与故障排查见仓库里的 RUNBOOK.md。默认不配置任何模型与 API Key。
+      </p>
+    </section>
+
+    <section id="engineering">
+      <h2>工程与边界</h2>
+      <div class="grid two">
+        <article class="card">
+          <h3>做得到的</h3>
+          <ul>
+            <li>零模型依赖：显式记忆读写与全文检索都不需要推理服务。</li>
+            <li>离线降级：PowerContext 不可用时只按到期排序，并在页面顶部标明"记忆离线"，不伪造记忆。</li>
+            <li>隐私：数据全在本地；审计日志里的 token 一律打码。</li>
+            <li>可复现：验证用独立 scope 与独立数据库，不碰你的复习记录。</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>故意不做的</h3>
+          <ul>
+            <li>不自动出题、不自动批改：题目与解析是自写的 28 张卡，可核对来源。</li>
+            <li>不用大模型生成"记忆"：写什么由策略阈值决定，人能改写和撤回。</li>
+            <li>不做多用户与云同步：这是个人本地工具，规模问题不装样子。</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>RecallCoach · 数据库系统复习教练 · 基于 PowerContext 1.2.0</p>
+    <p>代码仓库：<a href="https://github.com/Tomlegend2026/oceanbase2026-powercontext/tree/qoder/recallcoach" rel="noopener">Tomlegend2026/oceanbase2026-powercontext · qoder/recallcoach</a></p>
+    <p class="muted">运行说明见仓库里的 <code>qoder/RUNBOOK.md</code>；验证样例见 <code>qoder/docs/verification.md</code>。本页内容来自项目自身文档与真实运行输出。</p>
+  </footer>
+</body>
+</html>

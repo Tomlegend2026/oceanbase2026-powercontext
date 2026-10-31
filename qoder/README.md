@@ -50,6 +50,25 @@ uv tool install --force "powercontext[cli,server]==1.2.0"
 #    Dashboard http://127.0.0.1:8000/dashboard/home
 ```
 
+### Linux / macOS（评审与自动评测入口）
+
+```bash
+cd qoder
+sh run.sh            # 等价：make run
+# 或手动：
+cd app && python3 -m venv .venv && . .venv/bin/activate \
+  && pip install -r requirements.txt && pip install -e . \
+  && python -m uvicorn recallcoach.main:app --port 8080
+curl -s http://127.0.0.1:8080/api/health
+```
+
+要点：
+
+- **不需要先装 PowerContext**：没有它时应用以"记忆离线"启动，队列、答题、调度、复习记录照常工作；接上 PowerContext 后记忆能力自动生效。
+- 端口用 `PORT=8090 sh run.sh` 覆盖。
+- `make test` 会在同样环境里跑完 66 个测试，不需要数据库或网络。
+- 健康检查：`GET /api/health` 返回 `pc_ready`、`cards`、`memory_refs` 等字段。
+
 ## 目录
 
 ```
