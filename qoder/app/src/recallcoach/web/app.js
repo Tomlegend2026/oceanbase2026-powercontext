@@ -11,13 +11,17 @@ const REASONS = {
   correct: "答对了，只更新调度",
   "lapses<2": "同一知识点首次失败，先观察",
   "daily-cap": "今日写入已达上限",
+  "personalization-off": "对照模式（off）：本轮不读写记忆",
   dedupe: "已合并到已有条目",
   forbidden: "内容不合规，未写入",
   "threshold-met": "达到阈值，写入薄弱点",
+  "concept-mix": "错因里确认了混淆对象",
   "session-end": "会话结束，记录进度",
   "same-day": "今日已有进度条目，改为修订",
   "empty-session": "本轮没有作答",
 };
+
+const KINDS = { weakness: "薄弱点", misconception: "混淆", progress: "进度" };
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -101,7 +105,8 @@ function coachNoteHtml(raw) {
 }
 
 async function loadToday() {
-  const mode = state.personalization ? "on" : "off";  try {
+  const mode = state.personalization ? "on" : "off";
+  try {
     const data = await api(`/api/today?personalization=${mode}`);
     state.sessionId = data.session_id;
 
@@ -119,7 +124,8 @@ async function loadToday() {
       note.classList.add("hidden");
     }
 
-    $("#queue-meta").textContent = `共 ${data.items.length} 张 · 模式 ${data.mode} · 会话 ${data.session_id}`;
+    $("#queue-meta").textContent = `共 ${data.items.length} 张 · 模式 ${data.mode} · 会话 ${data.session_id}`
+      + (data.mode === "off" ? " · 对照模式：本轮不读写记忆" : "");
 
     const queue = $("#queue");
     if (!data.items.length) {
@@ -161,6 +167,8 @@ function openCard(item) {
   $("#panel-answer").classList.add("hidden");
   $("#panel-reveal").classList.remove("hidden");
   $("#panel-cause").value = "";
+  $("#panel-mix").value = "";
+  $("#panel-mix-wrap").classList.add("hidden");
   $("#answer-panel").classList.remove("hidden");
 }
 
@@ -170,24 +178,37 @@ function closePanel() {
 }
 
 function memoryToast(result) {
-  const memory = result.memory || {};
-  const decision = result.decision || memory.decision || {};
-  if (memory.status === "written") {
-    toast(`已记下 ${memory.kind}：${memory.entry_id}（v${memory.version ?? 1}）`);
-  } else if (memory.status === "revised") {
-    toast(`已修订记忆：${memory.entry_id} → v${memory.version ?? "?"}`, "warn");
-  } else if (memory.status === "error") {
-    toast(`记忆写入失败：${memory.error}`, "bad");
-  } else {
-    const reason = REASONS[decision.reason] || decision.reason || "跳过";
-    toast(`本次不写记忆：${reason}`);
+  // 一次作答可能同时产出薄弱点与混淆两条决策，逐条显示
+  const decisions = [].concat(result.decision || []);
+  const memories = [].concat(result.memory || []);
+  const lines = [];
+  let failed = false;
+  memories.forEach((memory, index) => {
+    const decision = memory.decision || decisions[index] || {};
+    const kind = KINDS[decision.kind] || decision.kind || "记忆";
+    if (memory.status === "written") {
+      lines.push(`已记下${kind}：${memory.entry_id}（v${memory.version ?? 1}）`);
+    } else if (memory.status === "revised") {
+      lines.push(`已修订${kind}：${memory.entry_id} → v${memory.version ?? "?"}`);
+    } else if (memory.status === "error") {
+      failed = true;
+      lines.push(`${kind}写入失败：${memory.error}`);
+    }
+  });
+  if (!lines.length) {
+    const decision = decisions[0] || {};
+    lines.push(`本次不写记忆：${REASONS[decision.reason] || decision.reason || "跳过"}`);
   }
+  toast(lines.join("　·　"), failed ? "bad" : "ok");
 }
 
 async function submitAnswer(correct, confidence) {
   if (!state.current) return;
   const cardId = state.current.id;
-  const cause = $("#panel-cause").value || null;
+  const picked = $("#panel-cause").value;
+  const mix = $("#panel-mix").value.trim();
+  // 只有"概念混淆 + 用户写出对象"才拼成带对象的错因；否则保持原选项
+  const cause = picked === "概念混淆" && mix ? `概念混淆：${mix}` : picked || null;
   try {
     const result = await api("/api/answer", {
       method: "POST",
@@ -216,22 +237,29 @@ async function endSession() {
       method: "POST",
       body: JSON.stringify({ session_id: state.sessionId }),
     });
-    const memory = result.memory || {};
     const note = $("#session-summary");
     note.textContent = `本轮结束：${result.total} 张，答对 ${result.correct}。`
       + (result.stuck.length ? `\n卡住：${result.stuck.join("、")}` : "")
-      + `\n记忆：${memory.status || "skipped"}${memory.entry_id ? `（${memory.entry_id}）` : ""}`;
+      + `\n下次从 ${result.next_start || "今天队列首位"} 开始。`
+      + (result.progress_entry_id ? `\n进度已记下：${result.progress_entry_id}` : "\n本轮未写记忆。");
     note.classList.remove("hidden");
-    toast(memory.status === "written" ? "已记录本轮进度" : "本轮结束");
+    toast(result.progress_entry_id ? "已记录本轮进度" : "本轮结束");
     await loadToday();
   } catch (error) {
     toast(`结束失败：${error.message}`, "bad");
   }
 }
 
+function movedText(moved) {
+  const rows = [].concat(moved || []);
+  if (!rows.length) return "队列顺序没有变化。";
+  return `队列已重排：${rows.map((row) => `${row.card_id} #${row.before}→${row.after ?? "未进前十"}`).join("、")}`;
+}
+
 async function loadReplay() {
   const container = $("#replay-list");
   container.innerHTML = `<p class="muted">读取中…</p>`;
+  $("#replay-order").textContent = "";
   try {
     const data = await api("/api/replay");
     if (data.note) {
@@ -268,8 +296,14 @@ async function loadReplay() {
             method: "POST",
             body: JSON.stringify({ text }),
           });
-          toast(result.ok ? `已保存为 v${result.version}` : `保存失败：${result.error}`, result.ok ? "ok" : "bad");
+          if (!result.ok) {
+            toast(`保存失败：${result.error}`, "bad");
+            return;
+          }
+          toast(`已保存为 v${result.version}`);
           await loadReplay();
+          $("#replay-order").textContent = movedText(result.moved);
+          await loadToday();
         } catch (error) {
           toast(`保存失败：${error.message}`, "bad");
         }
@@ -280,8 +314,13 @@ async function loadReplay() {
             method: "POST",
             body: JSON.stringify({ reason: "用户标记已掌握" }),
           });
-          toast(result.ok ? "已标记为掌握，队列会立刻重排" : `失败：${result.error}`, result.ok ? "ok" : "bad");
+          if (!result.ok) {
+            toast(`标记失败：${result.error}`, "bad");
+            return;
+          }
+          toast("已标记为掌握，队列会立刻重排");
           await loadReplay();
+          $("#replay-order").textContent = movedText(result.moved);
           await loadToday();
         } catch (error) {
           toast(`标记失败：${error.message}`, "bad");
@@ -389,6 +428,12 @@ function wire() {
   $("#panel-reveal").addEventListener("click", () => {
     $("#panel-answer").classList.remove("hidden");
     $("#panel-reveal").classList.add("hidden");
+  });
+  // 选了"概念混淆"才追问混淆对象：没有对象就不写这条判断（memory-design.md 第 3 节）
+  $("#panel-cause").addEventListener("change", (event) => {
+    const wrap = $("#panel-mix-wrap");
+    wrap.classList.toggle("hidden", event.target.value !== "概念混淆");
+    if (event.target.value !== "概念混淆") $("#panel-mix").value = "";
   });
   document.querySelectorAll(".rating button").forEach((button) => {
     button.addEventListener("click", () => {

@@ -126,15 +126,18 @@ CREATE TABLE memory_refs (
 
 | 方法 | 路径 | 请求 | 响应要点 |
 |---|---|---|---|
-| GET | `/api/today` | `?personalization=on\|off` | `items[{card, score_breakdown, memory_hits[], coach_note}]`, `mode` |
-| POST | `/api/answer` | `{card_id, correct, confidence, cause?, latency_ms}` | `schedule`, `memory_decision{action:write\|revise\|skip, entry_id?, reason}` |
-| POST | `/api/session/end` | `{session_id}` | `progress_entry_id`, `next_start` |
-| GET | `/api/replay` | `?kind=` | `entries[{entry_id, kind, text, version, state, ts, hit_cards[]}]` |
-| POST | `/api/memory/{entry_id}/revise` | `{text, reason?}` | 新 version + 重排后的 `items` |
-| POST | `/api/memory/{entry_id}/retire` | `{reason?}` | `state:"retired"` + 重排后的 `items` |
-| GET | `/api/compare` | `?limit=5` | `on[]`, `off[]`, `diff[]` |
-| GET | `/api/evidence` | — | 审计条目 + `report_markdown` |
-| GET | `/api/health` | — | `pc_ready`, `capabilities`, `scope_id`, `cards`, `memories`, `audit_path` |
+| GET | `/api/today` | `?personalization=on\|off` | `items[{card 字段…, score, breakdown{due,weakness,misconception,progress,fatigue}, memory_hits[{entry_id,kind}], practiced_today}]`, `mode`, `degraded`, `coach_note`, `date`, `session_id` |
+| POST | `/api/answer` | `{card_id, correct, confidence, cause?, latency_ms, session_id?}` | `schedule`, `personalization`, `decision[]` 与 `memory[]` 同序：前者每项 `{action:write\|revise\|skip, kind, text, reason, target_entry_id}`，后者每项 `{status:skipped\|written\|revised\|error, entry_id?, version?, kind?, text?, decision?}` |
+| POST | `/api/session/end` | `{session_id}` | `total`, `correct`, `stuck[]`, `next_start`, `progress_entry_id`, `decision[]`, `memory[]` |
+| GET | `/api/replay` | `?kind=` | `entries[{entry_id, kind, text, version, state, kp_id, hit_cards[]}]`, `note` |
+| POST | `/api/memory/{entry_id}/revise` | `{text}` | `ok`, `version`, `entry_id`, `items[]`（重排后的今日队列）, `moved[{card_id, before, after}]` |
+| POST | `/api/memory/{entry_id}/retire` | `{reason?}` | `ok`, `state:"retired"`, `entry_id`, `items[]`, `moved[]` |
+| GET | `/api/compare` | `?limit=5` | `on[]`, `off[]`, `diff[]`, `mode`, `degraded` |
+| GET | `/api/evidence` | `?limit=50` | 审计条目 + `report_markdown` |
+| GET | `/api/health` | — | `pc_ready`, `capabilities`, `scope_id`, `cards`, `memory_refs`, `audit_path`, `db_path`, `date`, `personalization` |
+
+`decision` 用数组而不是单个对象：薄弱点与混淆是两条独立分支（见 [memory-design.md](memory-design.md) 第 3 节），一次答错可能同时产出两条决策，`memory[]` 与之一一对应。
+`/api/today` 的 `personalization=off` 会开启 `mode="ab_off"` 的会话，`/api/answer` 与 `/api/session/end` 依据该会话的 mode 决定要不要碰记忆。
 
 错误约定：PowerContext 不可用时，`/api/today` 返回 `degraded:true` 与 `mode:"offline"`，队列退化为纯到期排序，页面顶部显示"记忆离线"横幅——**不伪造记忆**。
 
@@ -149,7 +152,7 @@ fatigue  = -0.4 * answers_today(kp)           # 当天已练过则降权
 score    = base + weak + miscon + progress + fatigue
 ```
 
-`hit()` 为 0/1：该 kp 是否被本次 `memory/search` 命中。`score_breakdown` 必须逐项返回，页面直接展示。
+`hit()` 为 0/1：该 kp 是否被本次 `memory/search` 命中。`breakdown` 必须逐项返回，页面直接展示。
 
 打分对象是**全部到期卡**，排序后取前 10；答错的卡当天仍保持到期（`due_at = 今天`），否则"答错一次就被踢出今日队列"，既不符合复习直觉，也让"错误 → 记忆 → 重排"的演示无法在同一轮里完成。
 

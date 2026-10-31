@@ -166,7 +166,7 @@ class Service:
 
     # ---------- 队列 ----------
 
-    def _ranked(self, personalization: bool) -> dict[str, Any]:
+    def _ranked(self, personalization: bool, *, want_coach_note: bool = True) -> dict[str, Any]:
         cards = dbmod.due_cards(self.conn, self.today, limit=200)
         mode = "off"
         degraded = False
@@ -201,7 +201,11 @@ class Service:
                             if len(merged) != len(hits):
                                 hits = merged
                                 items = rank(hits)
-                            prepared = self.gateway.prepare(scope, query)
+                            prepared = (
+                                self.gateway.prepare(scope, query)
+                                if want_coach_note
+                                else {"status": None, "content": None}
+                            )
                             if prepared.get("status") == "ready" and prepared.get("content"):
                                 coach_note = str(prepared["content"])
                     except PowerContextError:
@@ -214,7 +218,7 @@ class Service:
     def build_today(self, personalization: bool | None = None) -> dict[str, Any]:
         enabled = self.settings.personalization if personalization is None else personalization
         payload = self._ranked(enabled)
-        session = dbmod.open_session(
+        session = dbmod.reuse_session(
             self.conn,
             dbmod.course_id(self.conn),
             "normal" if enabled else "ab_off",
@@ -240,9 +244,14 @@ class Service:
             return None
 
         now = _now()
-        session_id = session_id or dbmod.open_session(
-            self.conn, dbmod.course_id(self.conn), "normal", now
+        session_id = session_id or dbmod.reuse_session(
+            self.conn,
+            dbmod.course_id(self.conn),
+            "normal" if self.settings.personalization else "ab_off",
+            now,
         )["id"]
+        # off 会话是对照组：既不能读记忆，也不能写记忆，否则污染下一次比较（memory-design.md 第 9 节）
+        enabled = dbmod.session_mode(self.conn, session_id) != "ab_off"
         dbmod.add_answer(
             self.conn,
             card_id=card_id,
@@ -256,7 +265,7 @@ class Service:
         new_state = scheduler.review(card, correct=correct, confidence=confidence, today=self.today)
         dbmod.save_schedule(self.conn, card_id, new_state)
 
-        decision = policy.decide_answer(
+        decisions = policy.decide_answer(
             card=card,
             correct=correct,
             confidence=confidence,
@@ -264,22 +273,30 @@ class Service:
             lapses_7d=dbmod.lapses_in_window(self.conn, card["kp_id"], now - timedelta(days=7), now),
             active=self._active_map(),
             writes_today=self._writes_today(),
+            personalization=enabled,
         )
-
-        memory: dict[str, Any] = {"status": "skipped", "decision": decision.as_dict()}
-        if decision.action in {"write", "revise"} and self.memory_ready():
-            try:
-                memory = self._apply_decision(decision, card)
-            except PowerContextError as exc:
-                memory = {"status": "error", "error": str(exc), "decision": decision.as_dict()}
 
         return {
             "card_id": card_id,
             "session_id": session_id,
             "schedule": new_state,
-            "decision": decision.as_dict(),
-            "memory": memory,
+            "personalization": enabled,
+            "decision": [decision.as_dict() for decision in decisions],
+            "memory": self._execute(decisions, card),
         }
+
+    def _execute(self, decisions: list[policy.Decision], card: dict[str, Any]) -> list[dict[str, Any]]:
+        """逐条执行决策，返回与 decision 列表同序的结果；不在线时保持 skipped，不伪造写入。"""
+        results: list[dict[str, Any]] = []
+        for decision in decisions:
+            if decision.action not in {"write", "revise"} or not self.memory_ready():
+                results.append({"status": "skipped", "decision": decision.as_dict()})
+                continue
+            try:
+                results.append(self._apply_decision(decision, card))
+            except PowerContextError as exc:
+                results.append({"status": "error", "error": str(exc), "decision": decision.as_dict()})
+        return results
 
     def _apply_decision(self, decision: policy.Decision, card: dict[str, Any]) -> dict[str, Any]:
         scope = self.scope()
@@ -343,8 +360,14 @@ class Service:
         if answers:
             first_card = dbmod.card_by_id(self.conn, answers[0]["card_id"])
             chapter = str(first_card["chapter"]) if first_card else ""
-        upcoming = dbmod.all_cards(self.conn, limit=1)
-        next_card = upcoming[0]["id"] if upcoming else None
+
+        mode = dbmod.session_mode(self.conn, session_id)
+        enabled = mode != "ab_off"
+        # 次日起点：本轮没答对的第一张卡；全答对则用当前排序的首位
+        queue = self._ranked(enabled, want_coach_note=False)["items"]
+        done = {row["card_id"] for row in answers if int(row["correct"]) == 1}
+        next_start = next((item["id"] for item in queue if item["id"] not in done), None)
+        next_start = next_start or (queue[0]["id"] if queue else None)
 
         active_progress = next(
             (
@@ -354,26 +377,39 @@ class Service:
             ),
             None,
         )
-        decision = policy.decide_session_end(
+        decisions = policy.decide_session_end(
             chapter=chapter or "db",
             total=total,
             correct=correct,
             stuck=stuck,
-            next_card=next_card,
+            next_card=next_start,
             active_progress_entry=active_progress,
             writes_today=self._writes_today(),
+            personalization=enabled,
         )
 
-        memory: dict[str, Any] = {"status": "skipped", "decision": decision.as_dict()}
-        if decision.action in {"write", "revise"} and self.memory_ready():
+        memory: list[dict[str, Any]] = []
+        if any(item.action in {"write", "revise"} for item in decisions):
             card = {"kp_id": chapter or "db", "kp_name": chapter or "会话"}
-            try:
-                memory = self._apply_decision(decision, card)
-            except PowerContextError as exc:
-                memory = {"status": "error", "error": str(exc), "decision": decision.as_dict()}
+            memory = self._execute(decisions, card)
+        else:
+            memory = [{"status": "skipped", "decision": item.as_dict()} for item in decisions]
 
         dbmod.close_session(self.conn, session_id, _now())
-        return {"session_id": session_id, "total": total, "correct": correct, "stuck": stuck, "memory": memory}
+        return {
+            "session_id": session_id,
+            "total": total,
+            "correct": correct,
+            "stuck": stuck,
+            "personalization": enabled,
+            # 次日起点与进度条目：小结页与"上次停在 db-008"都靠这两个字段
+            "next_start": next_start,
+            "progress_entry_id": next(
+                (item.get("entry_id") for item in memory if item.get("entry_id")), None
+            ),
+            "decision": [item.as_dict() for item in decisions],
+            "memory": memory,
+        }
 
     # ---------- Replay ----------
 
@@ -397,6 +433,22 @@ class Service:
             entries = [entry for entry in entries if entry.get("kind") == kind]
         return {"entries": entries, "note": note}
 
+    def _personal_on(self) -> bool:
+        return bool(self.settings.personalization)
+
+    @staticmethod
+    def _moved(before: list[str], after: list[str]) -> list[dict[str, Any]]:
+        """只报告位次真的变了的卡片，前端据此高亮。"""
+        changed = []
+        for index, card_id in enumerate(after):
+            previous = before.index(card_id) + 1 if card_id in before else None
+            if previous is not None and previous != index + 1:
+                changed.append({"card_id": card_id, "before": previous, "after": index + 1})
+        for card_id in before:
+            if card_id not in after:
+                changed.append({"card_id": card_id, "before": before.index(card_id) + 1, "after": None})
+        return changed
+
     def revise_memory(self, entry_id: str, text: str) -> dict[str, Any]:
         ref = dbmod.memory_ref(self.conn, entry_id)
         if not ref:
@@ -404,6 +456,8 @@ class Service:
         scope = self.scope()
         if not scope:
             return {"ok": False, "error": "记忆离线"}
+        enabled = self._personal_on()
+        before = [item["id"] for item in self._ranked(enabled, want_coach_note=False)["items"]]
         try:
             result = self.gateway.revise(scope, ref["citation"], kind=str(ref["kind"]), text=text)
         except PowerContextError as exc:
@@ -411,21 +465,37 @@ class Service:
         entry = result.get("entry") or {}
         citation = entry.get("citation") or ref["citation"]
         dbmod.save_memory_ref(self.conn, entry_id, citation, ref.get("kp_id"), str(ref["kind"]), _now())
-        return {"ok": True, "version": entry.get("version"), "entry_id": entry_id}
+        items = self._ranked(enabled, want_coach_note=False)["items"]
+        return {
+            "ok": True,
+            "version": entry.get("version"),
+            "entry_id": entry_id,
+            "items": items,
+            "moved": self._moved(before, [item["id"] for item in items]),
+        }
 
-    def retire_memory(self, entry_id: str) -> dict[str, Any]:
+    def retire_memory(self, entry_id: str, reason: str = "已掌握") -> dict[str, Any]:
         ref = dbmod.memory_ref(self.conn, entry_id)
         if not ref:
             return {"ok": False, "error": "本地没有这条记忆的 citation，无法退休"}
         scope = self.scope()
         if not scope:
             return {"ok": False, "error": "记忆离线"}
+        enabled = self._personal_on()
+        before = [item["id"] for item in self._ranked(enabled, want_coach_note=False)["items"]]
         try:
-            self.gateway.retire(scope, ref["citation"], reason="用户标记已掌握")
+            self.gateway.retire(scope, ref["citation"], reason=reason)
         except PowerContextError as exc:
             return {"ok": False, "error": str(exc)}
         dbmod.drop_memory_ref(self.conn, entry_id)
-        return {"ok": True, "entry_id": entry_id}
+        items = self._ranked(enabled, want_coach_note=False)["items"]
+        return {
+            "ok": True,
+            "entry_id": entry_id,
+            "state": "retired",
+            "items": items,
+            "moved": self._moved(before, [item["id"] for item in items]),
+        }
 
     # ---------- 对照与证据 ----------
 

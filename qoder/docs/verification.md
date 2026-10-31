@@ -36,7 +36,7 @@ cd qoder
 
 - **初始数据**：新 scope，0 条记忆；28 张卡全部到期。
 - **操作**：`GET /api/today?personalization=on`。
-- **预期**：10 张卡，全按 `due_score` 排序；每张 `score_breakdown.weak = 0`；备忘区显示"暂无历史，按默认讲法"。
+- **预期**：10 张卡，全按 `due_score` 排序；每张 `breakdown.weakness = 0`；备忘区显示"暂无历史，按默认讲法"。
 - **证据**：`context/prepare` 返回 `status:"empty"`；审计日志 `mode:"fts"`、`hit_count:0`。
 
 ## V2 写入闭环：两次失败才写，第三次是修订

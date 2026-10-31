@@ -9,6 +9,9 @@ WEAKNESS_LAPSE_THRESHOLD = 2
 DAILY_WRITE_CAP = 20
 MAX_TEXT_CHARS = 300
 
+# 错因下拉里代表"具体混淆"的选项前缀；只有它才触发 misconception 分支。
+MISCONCEPTION_CAUSE = "概念混淆"
+
 FORBIDDEN_MARKERS = ("token", "Bearer", "http://", "https://", "@")
 
 
@@ -40,6 +43,80 @@ def is_forbidden(text: str) -> bool:
     return any(marker in text for marker in FORBIDDEN_MARKERS)
 
 
+def _weakness_branch(
+    *,
+    kp: str,
+    kp_name: str,
+    confidence: int,
+    detail: str,
+    lapses_7d: int,
+    active: Mapping[tuple[str, str], str],
+) -> Decision:
+    """薄弱点分支：受 lapses 阈值约束。"""
+    if lapses_7d < WEAKNESS_LAPSE_THRESHOLD:
+        return Decision("skip", "lapses<2")
+
+    hint = f"错因：{detail}。" if detail else ""
+    text = _trim(f"[kp:{kp}] {kp_name}：{lapses_7d} 次未通过，最近一次自评 {confidence}/5。{hint}")
+    if is_forbidden(text):
+        return Decision("skip", "forbidden")
+
+    target = active.get(("weakness", kp))
+    if target:
+        return Decision("revise", "dedupe", kind="weakness", text=text, target_entry_id=target)
+    return Decision("write", "threshold-met", kind="weakness", text=text)
+
+
+def _misconception_branch(
+    *,
+    kp: str,
+    kp_name: str,
+    cause: str | None,
+    lapses_7d: int,
+    active: Mapping[tuple[str, str], str],
+) -> Decision | None:
+    """具体混淆分支：只在用户于错因下拉里确认过混淆对象时触发。
+
+    它不套 lapses 阈值（memory-design.md 第 3 节的两个分支各自独立判断）：
+    这条结论来自用户填写而不是我们的推断，禁写清单第 5 条挡的是后者。
+    """
+    detail = (cause or "").strip()
+    if not detail.startswith(MISCONCEPTION_CAUSE):
+        return None
+    # "概念混淆：把 read view 和锁的范围搞混" → 取出冒号后的混淆对象
+    extra = detail[len(MISCONCEPTION_CAUSE) :].strip(" ：:，,。")
+    if not extra:
+        return None
+
+    text = _trim(f"[kp:{kp}] {kp_name}：把 {extra} 混为一谈（第 {lapses_7d} 次）。")
+    if is_forbidden(text):
+        return Decision("skip", "forbidden")
+
+    target = active.get(("misconception", kp))
+    if target:
+        return Decision("revise", "dedupe", kind="misconception", text=text, target_entry_id=target)
+    return Decision("write", "concept-mix", kind="misconception", text=text)
+
+
+def _collapse(decisions: list[Decision]) -> list[Decision]:
+    """有分支要写时不再回传另一分支的"为什么没写"，避免证据里同时出现写与跳过。
+
+    全为 skip 时按 (action, reason) 去重，保持顺序。
+    """
+    applied = [item for item in decisions if item.action != "skip"]
+    if applied:
+        return applied
+
+    unique: list[Decision] = []
+    seen: set[tuple[str, str]] = set()
+    for item in decisions:
+        key = (item.action, item.reason)
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
+
 def decide_answer(
     *,
     card: Mapping[str, Any],
@@ -49,39 +126,31 @@ def decide_answer(
     lapses_7d: int,
     active: Mapping[tuple[str, str], str],
     writes_today: int,
-) -> Decision:
-    """一次作答后是否写入记忆。
+    personalization: bool = True,
+) -> list[Decision]:
+    """一次作答后的写入决策，返回按分支顺序排列的决策列表。
 
     active 的键是 (kind, kp_id)，值是 entry_id。
+    personalization=False 时策略层不产生任何写操作（memory-design.md 第 9 节）。
     """
+    if not personalization:
+        return [Decision("skip", "personalization-off")]
+    if writes_today >= DAILY_WRITE_CAP:
+        return [Decision("skip", "daily-cap")]
+    if correct:
+        return [Decision("skip", "correct")]
+
     kp = str(card["kp_id"])
     kp_name = str(card.get("kp_name") or kp)
-
-    if writes_today >= DAILY_WRITE_CAP:
-        return Decision("skip", "daily-cap")
-    if correct:
-        return Decision("skip", "correct")
-    if lapses_7d < WEAKNESS_LAPSE_THRESHOLD:
-        return Decision("skip", "lapses<2")
-
     detail = (cause or "").strip()
-    if detail.startswith("概念混淆"):
-        kind = "misconception"
-        extra = detail.replace("概念混淆", "", 1).strip(" ：:，,。")
-        text = f"[kp:{kp}] {kp_name}：{extra or '与其他概念混淆'}（第 {lapses_7d} 次）。"
-    else:
-        kind = "weakness"
-        hint = f"错因：{detail}。" if detail else ""
-        text = f"[kp:{kp}] {kp_name}：{lapses_7d} 次未通过，最近一次自评 {confidence}/5。{hint}"
 
-    text = _trim(text)
-    if is_forbidden(text):
-        return Decision("skip", "forbidden")
-
-    target = active.get((kind, kp))
-    if target:
-        return Decision("revise", "dedupe", kind=kind, text=text, target_entry_id=target)
-    return Decision("write", "threshold-met", kind=kind, text=text)
+    branches = [
+        _weakness_branch(
+            kp=kp, kp_name=kp_name, confidence=confidence, detail=detail, lapses_7d=lapses_7d, active=active
+        ),
+        _misconception_branch(kp=kp, kp_name=kp_name, cause=cause, lapses_7d=lapses_7d, active=active),
+    ]
+    return _collapse([branch for branch in branches if branch is not None])
 
 
 def decide_session_end(
@@ -93,19 +162,22 @@ def decide_session_end(
     next_card: str | None,
     active_progress_entry: str | None,
     writes_today: int,
-) -> Decision:
+    personalization: bool = True,
+) -> list[Decision]:
     """会话结束写一条进度叙事；当天已有则修订。"""
+    if not personalization:
+        return [Decision("skip", "personalization-off")]
     if writes_today >= DAILY_WRITE_CAP:
-        return Decision("skip", "daily-cap")
+        return [Decision("skip", "daily-cap")]
     if total == 0:
-        return Decision("skip", "empty-session")
+        return [Decision("skip", "empty-session")]
 
     stuck_text = "、".join(stuck[:3]) if stuck else "无"
-    next_text = next_card or "下次继续"
-    text = _trim(f"[kp:{chapter}] 本次 {total} 张，答对 {correct}；卡住：{stuck_text}；{next_text}。")
+    next_text = f"下次从 {next_card} 开始" if next_card else "下次继续"
+    text = _trim(f"[kp:{chapter}] {total} 张里答对 {correct}；卡住：{stuck_text}；{next_text}。")
 
     if is_forbidden(text):
-        return Decision("skip", "forbidden")
+        return [Decision("skip", "forbidden")]
     if active_progress_entry:
-        return Decision("revise", "same-day", kind="progress", text=text, target_entry_id=active_progress_entry)
-    return Decision("write", "session-end", kind="progress", text=text)
+        return [Decision("revise", "same-day", kind="progress", text=text, target_entry_id=active_progress_entry)]
+    return [Decision("write", "session-end", kind="progress", text=text)]

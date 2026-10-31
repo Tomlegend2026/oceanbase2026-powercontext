@@ -39,6 +39,7 @@
 
     <section id="tab-replay" class="tab">
       <p class="muted">这里的每一条都是 PowerContext 里的记忆条目。改一句、或标记已掌握，今日队列会立刻重排。</p>
+      <p id="replay-order" class="muted"></p>
       <div id="replay-list" class="replay"></div>
     </section>
 
@@ -78,11 +79,17 @@
           错因（可选）
           <select id="panel-cause">
             <option value="">未选择</option>
-            <option value="概念混淆">概念混淆（会写成 misconception 记忆）</option>
+            <option value="概念混淆">概念混淆</option>
             <option value="计算失误">计算失误</option>
             <option value="看错题">看错题</option>
             <option value="没学过">没学过</option>
           </select>
+        </label>
+        <!-- 只有用户自己写出混淆对象，才允许记下"混淆"这条判断；下拉里的一个词不算 -->
+        <label id="panel-mix-wrap" class="cause hidden">
+          和什么混了？
+          <input id="panel-mix" type="text" maxlength="120" placeholder="例：read view 的创建时机 与 锁的持有范围" />
+          <span class="muted">填了才会写进记忆；留空只按薄弱点处理。</span>
         </label>
       </div>
       <button id="panel-reveal">显示答案</button>

@@ -83,7 +83,7 @@ def create_app(service: Service | None = None) -> FastAPI:
 
     @app.post("/api/memory/{entry_id}/retire")
     def retire(entry_id: str, payload: RetireIn | None = None) -> dict[str, Any]:
-        return svc().retire_memory(entry_id)
+        return svc().retire_memory(entry_id, (payload.reason if payload and payload.reason else "已掌握"))
 
     @app.get("/api/compare")
     def compare(limit: int = 5) -> dict[str, Any]:

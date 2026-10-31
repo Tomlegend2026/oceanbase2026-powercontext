@@ -28,7 +28,7 @@
 
 ```
 输入: card, correct, confidence, cause, kp_recent_lapses, has_active_weakness
-输出: {action: "skip" | "write" | "revise", kind, text, reason}
+输出: [{action: "skip" | "write" | "revise", kind, text, reason}, ...]   # 薄弱点分支与混淆分支各至多一条
 
 若 correct: 
     skip（不在答对时新增薄弱点；答对只影响调度）
@@ -46,6 +46,12 @@
 用户点"就这么定":
     → write commitment
 ```
+
+**分支独立性**（实现约定）：`若 cause == "概念混淆"` 这一支**不套** `lapses < 2` 门槛——它记的是用户在错因下拉里确认过的判断，而不是我们的推断（第 5 节禁写清单挡的是后者）。由此：
+
+- `decide_answer` 返回**决策列表**：薄弱点分支给一条（skip / write / revise）；混淆分支只在"选了概念混淆**且**写出混淆对象"时给一条，没填对象就不给；两条可以同时出现（对应第 4 节"每个 kp 各存 1 条 active"）。
+- 只要有一条是 write/revise，就不再回传另一条的 skip，免得证据里"写了"和"跳过"并存；全是 skip 时按 `(action, reason)` 去重。
+- `personalization=False`（会话 `mode="ab_off"`）时策略层直接返回 `[skip: personalization-off]`，不产生任何写操作——第 9 节要求 off 组连写都不写，A/B 才可比。
 
 阈值常量集中在一处，便于测试与调参：
 
@@ -161,5 +167,7 @@ CREATE TABLE memory_refs (
 5. 命中禁写清单 → `skip`。
 6. 单日超过 20 条 → 进待确认，不写。
 7. `personalization=off` → 策略层不产生任何写操作。
+8. 错因选了"概念混淆"且写出对象 → 即使 `lapses=1` 也写 1 条 `misconception`（不受第 1 条门槛约束）。
+9. 同一次答错同时过两个分支 → 返回 `weakness` + `misconception` 两条决策；没填混淆对象时只有 `weakness`。
 
 网关层用假 HTTP 服务（httpx MockTransport）断言：URL、请求体、`X-PowerContext-Request-ID` 解析、审计落盘各一条。

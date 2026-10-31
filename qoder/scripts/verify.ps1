@@ -191,9 +191,12 @@ try {
         $answer = Invoke-Json -Method POST -Url "$base/api/answer" -Body @{
             card_id = "db-022"; correct = $false; confidence = 1; session_id = $script:sessionId
         }
-        $actions += "$($answer.decision.action)/$($answer.memory.status)"
-        if ($answer.memory.entry_id) { $entryId = $answer.memory.entry_id }
-        if ($answer.memory.version) { $version = $answer.memory.version }
+        # decision / memory 是列表：薄弱点与混淆两条分支各自独立判定（memory-design.md 第 3 节）
+        $decisionList = @($answer.decision)
+        $memoryList = @($answer.memory)
+        $actions += "$($decisionList[0].action)/$($memoryList[0].status)"
+        if ($memoryList[0].entry_id) { $entryId = $memoryList[0].entry_id }
+        if ($memoryList[0].version) { $version = $memoryList[0].version }
         Save-Json "v2-answer-$n.json" $answer
     }
     Check "V2 写入闭环" ($actions[0] -like "skip/*" -and $actions[1] -like "write/*" -and $actions[2] -like "revise/*" -and $version -eq 2) `

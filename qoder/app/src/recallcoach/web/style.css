@@ -191,6 +191,18 @@ main { padding: 18px 28px 80px; }
   border-radius: 8px;
   padding: 6px 8px;
 }
+.cause input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.cause span.muted { display: block; margin-top: 6px; font-size: 12px; }
 #panel-reveal {
   margin-top: 16px;
   width: 100%;

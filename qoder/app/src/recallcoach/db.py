@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
@@ -289,26 +290,36 @@ def answers_today_by_kp(conn: sqlite3.Connection, day: date) -> dict[str, int]:
     return {row["kp_id"]: int(row["n"]) for row in rows}
 
 
-def open_session(conn: sqlite3.Connection, course_id: str, mode: str, now: datetime) -> dict[str, Any]:
-    row = conn.execute(
-        "SELECT * FROM sessions WHERE ended_at IS NULL AND course_id = ? ORDER BY started_at DESC LIMIT 1",
+def reuse_session(conn: sqlite3.Connection, course_id: str, mode: str, now: datetime) -> dict[str, Any]:
+    """取回当前活跃的会话；模式不符时收尾旧的并建一条。
+
+    切换个性化开关不该凭空堆出一串空会话，但 normal 与 ab_off 必须分开：
+    对照组和实验组混在同一个 session 里，A/B 就不可比了。
+    """
+    rows = conn.execute(
+        "SELECT * FROM sessions WHERE ended_at IS NULL AND course_id = ? ORDER BY started_at DESC",
         (course_id,),
-    ).fetchone()
-    if row and row["mode"] == mode:
-        return dict(row)
-    session_id = f"s-{now.strftime('%Y%m%d%H%M%S')}-{mode}"
+    ).fetchall()
+    for row in rows:
+        if row["mode"] == mode:
+            return dict(row)
+
+    stamp = now.isoformat(timespec="seconds")
+    session_id = f"s-{now.strftime('%Y%m%d%H%M%S')}-{mode}-{uuid.uuid4().hex[:4]}"
     with conn:
+        for row in rows:
+            conn.execute("UPDATE sessions SET ended_at = ? WHERE id = ?", (stamp, row["id"]))
         conn.execute(
             "INSERT INTO sessions(id, course_id, started_at, ended_at, mode) VALUES (?, ?, ?, NULL, ?)",
-            (session_id, course_id, now.isoformat(timespec="seconds"), mode),
+            (session_id, course_id, stamp, mode),
         )
-    return {
-        "id": session_id,
-        "course_id": course_id,
-        "started_at": now.isoformat(timespec="seconds"),
-        "ended_at": None,
-        "mode": mode,
-    }
+    return {"id": session_id, "course_id": course_id, "started_at": stamp, "ended_at": None, "mode": mode}
+
+
+def session_mode(conn: sqlite3.Connection, session_id: str) -> str | None:
+    """会话模式：normal | ab_off；会话不存在时返回 None。"""
+    row = conn.execute("SELECT mode FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return str(row["mode"]) if row else None
 
 
 def close_session(conn: sqlite3.Connection, session_id: str, now: datetime) -> None:
