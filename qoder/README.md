@@ -75,14 +75,14 @@ qoder/
 |---|---|
 | 方案文档、记忆策略、验证样例 | ✅ 就绪 |
 | 种子题库（28 卡 / 7 章 / 无重复 id） | ✅ 结构已校验 |
-| 应用（`app/`）：后端 + 前端 + 测试 | ✅ 可运行，34 个测试通过 |
+| 应用（`app/`）：后端 + 前端 + 测试 | ✅ 可运行，49 个测试通过 |
 | 端到端验证脚本（V1–V7） | ✅ 真实 PowerContext 1.2.0 上 PASS 8 / WARN 1 / FAIL 0 |
 | 展示站（`site/`） | ✅ 已含四张真实界面截图 |
 | 使用效果材料 | — 本次不提交（属鼓励项，不影响基础验收） |
 
 ### 已验证 / 未验证
 
-- **已验证**：种子文件可解析（28 卡、7 章、id 与 kp_id 唯一、章节引用有效）；全部 PowerShell 脚本零解析错误；提交基线为 `2026-competition-ecosystem` 的 `d647275c`；中文记忆可被检索（用仓库自身的 `analyze_text` + SQLite FTS5 复现，见 [memory-design.md](docs/memory-design.md) 第 6 节）；`pytest` 34 项通过。
+- **已验证**：种子文件可解析（28 卡、7 章、id 与 kp_id 唯一、章节引用有效）；全部 PowerShell 脚本零解析错误；提交基线为 `2026-competition-ecosystem` 的 `d647275c`；中文记忆可被检索（用仓库自身的 `analyze_text` + SQLite FTS5 复现，见 [memory-design.md](docs/memory-design.md) 第 6 节）；`pytest` 49 项通过（Qoder 审计后从 34 增至 49）。
 - **真实 Server 已跑通**：`uv tool install "powercontext[cli,server]==1.2.0"` 装上 1.2.0；技术层验证 9/9（`mode=fts`，中文记忆可召回）；端到端 V1–V7 为 PASS 8 / WARN 1 / FAIL 0（V7 需人工登录 Dashboard）。
 - **未验证**：Dashboard 登录后的人工核对、Qoder Sites 发布——这两项需要账号，不在本次自动化范围内。
 - **不提交**：使用效果材料（鼓励项）。本次不组织他人使用，网站上也不出现任何使用人数或提效数字。
